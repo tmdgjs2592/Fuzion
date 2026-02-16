@@ -1,0 +1,13 @@
+formats:
+  html:
+    description: "HTML only"
+    domato_arg: "html_only.html"
+  html_css:
+    description: "HTML + CSS"
+    domato_arg: "html_css.html"
+  html_js:
+    description: "HTML + JS"
+    domato_arg: "html_js.html"
+  html_css_js:
+    description: "HTML + CSS + JS"
+    domato_arg: "html_css_js.html"
