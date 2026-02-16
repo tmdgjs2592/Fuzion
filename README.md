@@ -41,6 +41,7 @@ Fuzion/
 ## Requirements
 - [Domato](https://github.com/googleprojectzero/domato)
 - - `git clone https://github.com/googleprojectzero/domato third_party/domato`
+- Microsoft Visual C++ Redistributable
 - Python 3.10 +
 
 ## Setup
@@ -48,6 +49,7 @@ Create a virtual env and install dependencies
 ```
 python3 -m venv .venv
 source .venv/bin/activate
+or .venv/Scripts/activate on Windows/bash
 pip install -U pip
 pip install -e .
 python -m playwright install chromium

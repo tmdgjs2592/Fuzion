@@ -14,6 +14,8 @@ venv/
 
 # Fuzion outputs
 out/
+corpus/generated/
+corpus/runs/
 
 # Third-party deps (if not using submodules)
 third_party/domato/

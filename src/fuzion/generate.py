@@ -1,6 +1,7 @@
 import subprocess
 from pathlib import Path
 from .util import ensure_dir
+import sys
 
 def _domato_generator(domato_dir: Path) -> Path:
     gen = domato_dir / "generator.py"
@@ -31,7 +32,7 @@ def generate_html_files(
     # Build domato generator cmd
     # Add grammar selections (Domato uses flags like --grammar or direct args depending on version).
     # We support both patterns by trying a modern flag style first, then falling back.
-    args = ["python3", str(gen)]
+    args = [sys.executable, str(gen)]
     template_grammar = template_dir / domato_format_arg
 
     # Pattern A (common): generator.py -o OUT -n N -t template.html
