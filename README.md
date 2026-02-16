@@ -49,7 +49,15 @@ Create a virtual env and install dependencies
 ```
 python3 -m venv .venv
 source .venv/bin/activate
-or .venv/Scripts/activate on Windows/bash
+```
+
+or on Windows Powershell use 
+```
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+.\.venv\Scripts\Activate.ps1
+```
+And then for both systems use
+```
 pip install -U pip
 pip install -e .
 python -m playwright install chromium
