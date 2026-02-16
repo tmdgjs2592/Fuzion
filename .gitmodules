@@ -1,0 +1,3 @@
+[submodule "third_party/domato"]
+	path = third_party/domato
+	url = https://github.com/googleprojectzero/domato.git
