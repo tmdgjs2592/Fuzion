@@ -1,2 +1,0 @@
-# Fuzion
-Fuzzer Generator
