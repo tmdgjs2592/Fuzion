@@ -3,4 +3,7 @@ corpus/generated/*
 corpus/runs/*
 !corpus/runs/.gitkeep
 !corpus/generated/.gitkeep
+!generator/.gitkeep
+!detector/.gitkeep
+
 .env

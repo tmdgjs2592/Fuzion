@@ -72,7 +72,7 @@ summary = {
     )
 }
 
-with open("runs/summary.json", "w") as f:
+with open("summary.json", "w") as f:
     json.dump(summary, f, indent=2)
 
 print("\nCreating final summary")
