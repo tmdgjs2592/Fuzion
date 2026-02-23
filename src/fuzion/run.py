@@ -83,7 +83,8 @@ async def run_one(
             async with async_playwright() as p:
                 # Launch Chromium headless.
                 # Chrome’s headless mode is documented by Chromium team. :contentReference[oaicite:7]{index=7}
-                browser = await p.chromium.launch(
+                context = await p.chromium.launch_persistent_context(
+                    user_data_dir,
                     headless=True,
                     args=[
                         "--no-first-run",
@@ -99,11 +100,9 @@ async def run_one(
                         "--disable-background-timer-throttling",
                         "--disable-client-side-phishing-detection",
                         "--disable-features=Translate,BackForwardCache",
-                        "--mute-audio",
-                        f"--user-data-dir={str(user_data_dir)}",
+                        "--mute-audio"
                     ],
                 )
-                context = await browser.new_context()
                 page = await context.new_page()
 
                 crashed = {"flag": False, "msg": ""}
@@ -127,7 +126,6 @@ async def run_one(
                     meta["result"] = "hang"
                     write_json(run_dir / "meta.json", meta)
                     await context.close()
-                    await browser.close()
                     return RunResult("hang", f"hard timeout > {hard_timeout_s}s", now_ms() - start)
                 except Exception as e:
                     # navigation timeout or other playwright errors
@@ -138,7 +136,6 @@ async def run_one(
                         meta["detail"] = crashed["msg"]
                         write_json(run_dir / "meta.json", meta)
                         await context.close()
-                        await browser.close()
                         return RunResult("crash", crashed["msg"], now_ms() - start)
 
                     # Heuristic: Playwright "Timeout" indicates nav timeout
@@ -147,14 +144,12 @@ async def run_one(
                         meta["detail"] = detail
                         write_json(run_dir / "meta.json", meta)
                         await context.close()
-                        await browser.close()
                         return RunResult("timeout", detail, now_ms() - start)
 
                     meta["result"] = "error"
                     meta["detail"] = detail
                     write_json(run_dir / "meta.json", meta)
                     await context.close()
-                    await browser.close()
                     return RunResult("error", detail, now_ms() - start)
 
                 # After navigation, if the page crash event fired, treat as crash
@@ -163,12 +158,10 @@ async def run_one(
                     meta["detail"] = crashed["msg"]
                     write_json(run_dir / "meta.json", meta)
                     await context.close()
-                    await browser.close()
                     return RunResult("crash", crashed["msg"], now_ms() - start)
 
                 # OK: delete run_dir to keep disk usage minimal (only keep abnormal)
                 await context.close()
-                await browser.close()
                 safe_rmtree(run_dir)
                 return RunResult("ok", "loaded", now_ms() - start)
 
