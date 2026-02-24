@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test: Deep DOM Crash</title></head>
+<body>
+<h1>Deep DOM Nesting Crash Test</h1>
+<p>This page creates 50,000 deeply nested div elements, which can cause
+a stack overflow in Chrome's rendering engine. Expected result: CRASH</p>
+<script>
+var el = document.body;
+for (var i = 0; i < 50000; i++) {
+  var child = document.createElement("div");
+  child.textContent = i;
+  el.appendChild(child);
+  el = child;
+}
+</script>
+</body>
+</html>

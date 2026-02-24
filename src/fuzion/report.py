@@ -1,0 +1,98 @@
+import json
+from pathlib import Path
+from datetime import datetime, timezone, timedelta
+
+def generate_report(out_dir: Path, output_path: Path) -> None:
+    results_file = out_dir / "results.json"
+    if not results_file.exists():
+        print("No results.json found. Run `fuzion` first.")
+        return
+
+    data = json.loads(results_file.read_text())
+    results = data["results"]
+
+    counts = {"ok": 0, "crash": 0, "timeout": 0, "hang": 0, "error": 0}
+    for r in results:
+        status = r.get("status", "unknown")
+        if status in counts:
+            counts[status] += 1
+
+    table_rows = ""
+    pst = timezone(timedelta(hours=-8))
+    failures = [r for r in results if r.get("status") != "ok"]
+    for r in failures:
+        status = r.get("status", "unknown")
+        detail = r.get("detail", "")
+        if len(detail) > 80:
+            detail = detail[:80] + "..."
+        testcase_id = r.get("testcase_id", "")
+        elapsed = r.get("elapsed_ms", 0)
+        table_rows += f"""
+        <tr>
+            <td>{testcase_id}</td>
+            <td><span class="badge {status}">{status.upper()}</span></td>
+            <td>{elapsed}ms</td>
+            <td>{detail}</td>
+        </tr>"""
+
+    total = len(results)
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Fuzion Report</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; padding: 40px; }}
+        h1 {{ font-size: 2rem; margin-bottom: 8px; }}
+        .subtitle {{ color: #94a3b8; margin-bottom: 32px; }}
+        .cards {{ display: flex; gap: 16px; margin-bottom: 40px; }}
+        .card {{ background: #1e293b; border-radius: 12px; padding: 24px; flex: 1; text-align: center; }}
+        .card .number {{ font-size: 2.5rem; font-weight: bold; }}
+        .card .label {{ color: #94a3b8; margin-top: 4px; font-size: 0.9rem; text-transform: uppercase; }}
+        .card.ok .number {{ color: #22c55e; }}
+        .card.crash .number {{ color: #ef4444; }}
+        .card.timeout .number {{ color: #f59e0b; }}
+        .card.hang .number {{ color: #f97316; }}
+        .card.error .number {{ color: #a78bfa; }}
+        .card.total .number {{ color: #38bdf8; }}
+        table {{ width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 12px; overflow: hidden; }}
+        th {{ background: #334155; text-align: left; padding: 14px 16px; font-size: 0.85rem; text-transform: uppercase; color: #94a3b8; }}
+        td {{ padding: 12px 16px; border-top: 1px solid #334155; }}
+        tr:hover {{ background: #253044; }}
+        .badge {{ padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }}
+        .badge.ok {{ background: #14532d; color: #86efac; }}
+        .badge.crash {{ background: #7f1d1d; color: #fca5a5; }}
+        .badge.timeout {{ background: #78350f; color: #fcd34d; }}
+        .badge.hang {{ background: #7c2d12; color: #fdba74; }}
+        .badge.error {{ background: #4c1d95; color: #c4b5fd; }}
+    </style>
+</head>
+<body>
+    <h1>Fuzion Report</h1>
+    <p class="subtitle">Generated {datetime.now(pst).strftime("%B %d, %Y at %I:%M %p PST")}</p>
+    <div class="cards">
+        <div class="card total"><div class="number">{total}</div><div class="label">Total Runs</div></div>
+        <div class="card ok"><div class="number">{counts["ok"]}</div><div class="label">OK</div></div>
+        <div class="card crash"><div class="number">{counts["crash"]}</div><div class="label">Crashes</div></div>
+        <div class="card timeout"><div class="number">{counts["timeout"]}</div><div class="label">Timeouts</div></div>
+        <div class="card hang"><div class="number">{counts["hang"]}</div><div class="label">Hangs</div></div>
+        <div class="card error"><div class="number">{counts["error"]}</div><div class="label">Errors</div></div>
+    </div>
+    <table>
+        <thead><tr><th>Testcase</th><th>Result</th><th>Elapsed</th><th>Detail</th></tr></thead>
+        <tbody>{table_rows}</tbody>
+    </table>
+</body>
+</html>"""
+
+    output_path.write_text(html)
+    print(f"Report written to {output_path}")
+
+if __name__ == "__main__":
+    root = Path(__file__).resolve().parents[2]
+    generate_report(
+        out_dir=root / "out",
+        output_path=root / "out" / "report.html",
+    )

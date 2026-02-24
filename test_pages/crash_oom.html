@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test: Out-of-Memory Crash</title></head>
+<body>
+<h1>Out-of-Memory Crash Test</h1>
+<p>This page allocates memory in an infinite loop until Chrome's renderer
+process is killed. Expected result: CRASH</p>
+<script>
+var bomb = [];
+while (true) {
+  bomb.push(new Array(1000000).fill("AAAAAAAAAA"));
+}
+</script>
+</body>
+</html>

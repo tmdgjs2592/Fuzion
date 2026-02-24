@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test: Infinite Loop Timeout</title></head>
+<body>
+<h1>Infinite Loop Timeout Test</h1>
+<p>This page runs an infinite JavaScript loop before the page finishes
+loading. The browser's load event never fires, so the navigation timeout
+will trigger. Expected result: TIMEOUT</p>
+<script>
+while (true) {}
+</script>
+</body>
+</html>
