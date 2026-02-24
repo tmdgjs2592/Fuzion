@@ -9,6 +9,7 @@ class FuzionConfig:
     corpus_dir: Path
     findings_dir: Path
     template_dir: Path
+    custom_dir: Path
     bundles_yaml: Path
 
     nav_timeout_s: int = 10
@@ -23,7 +24,8 @@ def default_config(project_root: Path) -> FuzionConfig:
         out_dir=out_dir,
         corpus_dir=out_dir / "corpus",
         findings_dir=out_dir / "findings",
-        template_dir= project_root / "templates",
+        template_dir=project_root / "templates",
+        custom_dir=project_root / "custom",
         bundles_yaml=project_root / "grammars" / "bundles.yaml",
     )
 

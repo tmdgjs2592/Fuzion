@@ -4,39 +4,54 @@ import yaml
 from rich.console import Console
 
 from .config import default_config
-from .tui import prompt_user, load_formats
-from .generate import generate_html_files
-from .triage import run_corpus
+from .tui import prompt_user, format_prompt_user, custom_prompt_user
+from .triage import run_corpus, TriageSummary
+from .run import run_one
 from .util import write_json
+from .generate import generate_html_files
 
 def main():
     console = Console()
     root = Path(__file__).resolve().parents[2]
     cfg = default_config(root)
 
-    n, fmt = prompt_user(cfg.bundles_yaml)
-    formats = load_formats(cfg.bundles_yaml)
-    domato_arg = formats[fmt]["domato_arg"]
+    choice = prompt_user(cfg)
 
-    console.print(f"\n[bold]Generating[/bold] {n} files using format [cyan]{fmt}[/cyan]...")
-    generate_html_files(
-        domato_dir=cfg.domato_dir,
-        corpus_dir=cfg.corpus_dir,
-        template_dir=cfg.template_dir,
-        n=n,
-        format_key=fmt,
-        domato_format_arg=domato_arg,
-    )
+    if (choice == 1):
+        n, fmt, domato_arg = format_prompt_user(cfg.bundles_yaml)
 
-    console.print(f"[bold]Running[/bold] headless Chromium over corpus in: {cfg.corpus_dir}")
-    summary, results = asyncio.run(
-        run_corpus(
+        console.print(f"\n[bold]Generating[/bold] {n} files using format [cyan]{fmt}[/cyan]...")
+        generate_html_files(
+            domato_dir=cfg.domato_dir,
             corpus_dir=cfg.corpus_dir,
-            findings_dir=cfg.findings_dir,
-            nav_timeout_s=cfg.nav_timeout_s,
-            hard_timeout_s=cfg.hard_timeout_s,
+            template_dir=cfg.template_dir,
+            n=n,
+            format_key=fmt,
+            domato_format_arg=domato_arg,
         )
-    )
+
+        console.print(f"[bold]Running[/bold] headless Chromium over corpus in: {cfg.corpus_dir}")
+        summary, results = asyncio.run(
+            run_corpus(
+                corpus_dir=cfg.corpus_dir,
+                findings_dir=cfg.findings_dir,
+                nav_timeout_s=cfg.nav_timeout_s,
+                hard_timeout_s=cfg.hard_timeout_s,
+            )
+        )
+    elif (choice == 2):
+        html = custom_prompt_user(cfg.custom_dir)
+        summary = TriageSummary()
+        console.print(f"[bold]Running[/bold] headless Chromium over a file: {html}")
+        res = asyncio.run(
+            run_one(
+                html_path=cfg.custom_dir/html,
+                findings_dir=cfg.findings_dir,
+                nav_timeout_s=cfg.nav_timeout_s,
+                hard_timeout_s=cfg.hard_timeout_s,
+            )
+        )
+        setattr(summary, res.status, getattr(summary, res.status) + 1)
 
     all_results = []
     for html_path, res in results:
