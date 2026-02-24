@@ -38,3 +38,25 @@ async def run_corpus(
 
     return summary, results
 
+async def run_custom(
+    *,
+    html_dir: Path,
+    findings_dir: Path,
+    nav_timeout_s: int,
+    hard_timeout_s: int,
+) -> Tuple[TriageSummary, List[tuple[Path, RunResult]]]:
+    ensure_dir(findings_dir)
+
+    summary = TriageSummary()
+    results: List[tuple[Path, RunResult]] = []
+
+    res = await run_one(
+                html_path=html_dir,
+                findings_dir=findings_dir,
+                nav_timeout_s=nav_timeout_s,
+                hard_timeout_s=hard_timeout_s,
+            )
+    results.append((html_dir, res))
+    setattr(summary, res.status, getattr(summary, res.status) + 1)
+
+    return summary, results

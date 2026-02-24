@@ -5,8 +5,7 @@ from rich.console import Console
 
 from .config import default_config
 from .tui import prompt_user, format_prompt_user, custom_prompt_user
-from .triage import run_corpus, TriageSummary
-from .run import run_one
+from .triage import run_corpus, run_custom
 from .util import write_json
 from .generate import generate_html_files
 
@@ -41,17 +40,15 @@ def main():
         )
     elif (choice == 2):
         html = custom_prompt_user(cfg.custom_dir)
-        summary = TriageSummary()
         console.print(f"[bold]Running[/bold] headless Chromium over a file: {html}")
-        res = asyncio.run(
-            run_one(
-                html_path=cfg.custom_dir/html,
+        summary, results = asyncio.run(
+            run_custom(
+                html_dir=cfg.custom_dir/html,
                 findings_dir=cfg.findings_dir,
                 nav_timeout_s=cfg.nav_timeout_s,
                 hard_timeout_s=cfg.hard_timeout_s,
             )
         )
-        setattr(summary, res.status, getattr(summary, res.status) + 1)
 
     all_results = []
     for html_path, res in results:
