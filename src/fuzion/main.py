@@ -7,6 +7,7 @@ from .config import default_config
 from .tui import prompt_user, load_formats
 from .generate import generate_html_files
 from .triage import run_corpus
+from .util import write_json
 
 def main():
     console = Console()
@@ -28,7 +29,7 @@ def main():
     )
 
     console.print(f"[bold]Running[/bold] headless Chromium over corpus in: {cfg.corpus_dir}")
-    summary, _ = asyncio.run(
+    summary, results = asyncio.run(
         run_corpus(
             corpus_dir=cfg.corpus_dir,
             findings_dir=cfg.findings_dir,
@@ -36,6 +37,17 @@ def main():
             hard_timeout_s=cfg.hard_timeout_s,
         )
     )
+
+    all_results = []
+    for html_path, res in results:
+        all_results.append({
+            "testcase_id": html_path.stem,
+            "testcase": str(html_path),
+            "status": res.status,
+            "detail": res.detail,
+            "elapsed_ms": res.elapsed_ms,
+        })
+    write_json(cfg.out_dir / "results.json", {"results": all_results})
 
     console.print("\n[bold]Summary[/bold]")
     console.print(f"  ok: {summary.ok}")
