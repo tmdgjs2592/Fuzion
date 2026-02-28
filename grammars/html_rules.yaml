@@ -1,0 +1,23 @@
+tags:
+  block:
+    - div
+    - p
+    - section
+    - article
+  inline:
+    - span
+    - a
+    - img
+    - input
+
+attributes:
+  global:
+    - id
+    - class
+    - title
+  values:
+    id: ["el0", "el1", "el2", "el3", "el4"]
+    class: ["c0", "c1", "c2", "c3"]
+
+max_depth: 6
+max_children: 4
