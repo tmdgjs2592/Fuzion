@@ -39,19 +39,15 @@ def format_prompt_user(bundles_yaml: Path) -> tuple[int, str, str]:
 
     return n, fmt, domato_arg
 
-def custom_prompt_user(custom_dir: Path):
+def custom_prompt_user() -> tuple[int, int | None]:
     console = Console()
-    console.print("Files available: ")
-    choices = []
 
-    for i,f in enumerate(custom_dir.iterdir()):
-        if f.is_file() and f.name.endswith(".html"):
-            console.print(f"{i}. [cyan]{f.name}[/cyan]")
-            choices.append(f.name)
+    n = IntPrompt.ask("How many files to generate?", default=100)
+    n = max(1, n)
 
-    choice = IntPrompt.ask("File number: ")
-    file_name = choices[choice-1]
+    seed_str = Prompt.ask("Random seed? (leave blank for none)", default="")
+    seed = int(seed_str) if seed_str.strip() else None
 
-    return file_name
+    return n, seed
 
 

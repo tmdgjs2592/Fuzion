@@ -5,9 +5,13 @@ from rich.console import Console
 
 from .config import default_config
 from .tui import prompt_user, format_prompt_user, custom_prompt_user
-from .triage import run_corpus, run_custom
-from .util import write_json
-from .generate import generate_html_files
+from .triage import run_corpus
+from .generators import DomatoGenerator, CustomGenerator
+from .util import write_json, safe_rmtree, ensure_dir
+
+def _reset_dir(p: Path) -> None:
+    safe_rmtree(p)
+    ensure_dir(p)
 
 def main():
     console = Console()
@@ -20,14 +24,13 @@ def main():
         n, fmt, domato_arg = format_prompt_user(cfg.bundles_yaml)
 
         console.print(f"\n[bold]Generating[/bold] {n} files using format [cyan]{fmt}[/cyan]...")
-        generate_html_files(
+        gen = DomatoGenerator(
             domato_dir=cfg.domato_dir,
-            corpus_dir=cfg.corpus_dir,
             template_dir=cfg.template_dir,
-            n=n,
             format_key=fmt,
             domato_format_arg=domato_arg,
         )
+        gen.generate(corpus_dir=cfg.corpus_dir, n=n)
 
         console.print(f"[bold]Running[/bold] headless Chromium over corpus in: {cfg.corpus_dir}")
         summary, results = asyncio.run(
@@ -38,12 +41,21 @@ def main():
                 hard_timeout_s=cfg.hard_timeout_s,
             )
         )
-    elif (choice == 2):
-        html = custom_prompt_user(cfg.custom_dir)
-        console.print(f"[bold]Running[/bold] headless Chromium over a file: {html}")
+    elif choice == 2:
+        n, seed = custom_prompt_user()
+
+        rules_path = cfg.project_root / "grammars" / "html_rules.yaml"
+        console.print(f"\n[bold]Generating[/bold] {n} custom files from: [cyan]{rules_path}[/cyan]...")
+
+        _reset_dir(cfg.corpus_dir)
+
+        gen = CustomGenerator(rules_path=rules_path, seed=seed)
+        gen.generate(corpus_dir=cfg.corpus_dir, n=n)
+
+        console.print(f"[bold]Running[/bold] headless Chromium over corpus in: {cfg.corpus_dir}")
         summary, results = asyncio.run(
-            run_custom(
-                html_dir=cfg.custom_dir/html,
+            run_corpus(
+                corpus_dir=cfg.corpus_dir,
                 findings_dir=cfg.findings_dir,
                 nav_timeout_s=cfg.nav_timeout_s,
                 hard_timeout_s=cfg.hard_timeout_s,
