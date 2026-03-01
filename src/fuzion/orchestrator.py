@@ -6,7 +6,7 @@ from .run import run_one, RunResult
 from .util import ensure_dir
 
 @dataclass
-class TriageSummary:
+class RunSummary:
     ok: int = 0
     crash: int = 0
     hang: int = 0
@@ -19,11 +19,11 @@ async def run_corpus(
     findings_dir: Path,
     nav_timeout_s: int,
     hard_timeout_s: int,
-) -> Tuple[TriageSummary, List[tuple[Path, RunResult]]]:
+) -> Tuple[RunSummary, List[tuple[Path, RunResult]]]:
     ensure_dir(corpus_dir)
     ensure_dir(findings_dir)
 
-    summary = TriageSummary()
+    summary = RunSummary()
     results: List[tuple[Path, RunResult]] = []
 
     for html in sorted(corpus_dir.glob("*.html")):
@@ -44,10 +44,10 @@ async def run_custom(
     findings_dir: Path,
     nav_timeout_s: int,
     hard_timeout_s: int,
-) -> Tuple[TriageSummary, List[tuple[Path, RunResult]]]:
+) -> Tuple[RunSummary, List[tuple[Path, RunResult]]]:
     ensure_dir(findings_dir)
 
-    summary = TriageSummary()
+    summary = RunSummary()
     results: List[tuple[Path, RunResult]] = []
 
     res = await run_one(

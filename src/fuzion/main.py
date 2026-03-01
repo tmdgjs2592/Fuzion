@@ -5,7 +5,7 @@ from rich.console import Console
 
 from .config import default_config
 from .tui import prompt_user, format_prompt_user, custom_prompt_user
-from .triage import run_corpus
+from .orchestrator import run_corpus
 from .generators import DomatoGenerator, CustomGenerator
 from .util import write_json, safe_rmtree, ensure_dir
 
