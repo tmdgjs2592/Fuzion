@@ -22,9 +22,9 @@ def prompt_user(cfg: FuzionConfig):
     console.print("[bold]Fuzion[/bold] — grammar-based browser fuzzing harness")    
     console.print("1. [cyan]Generate[/cyan]")
     console.print("2. [cyan]Custom[/cyan]")
-
+    console.print("3. [cyan]Manual[/cyan]")
     choice = IntPrompt.ask("Choice")
-    choice = max(1, min(choice, 2))
+    choice = max(1, min(choice, 3))
     logger.debug("User selected choice: %d", choice)
 
     return choice
@@ -66,3 +66,18 @@ def custom_prompt_user() -> tuple[int, int | None]:
     logger.debug("User provided seed: %s", seed)
 
     return n, seed
+
+def manual_prompt_user(custom_dir: Path):
+    console = Console()
+    console.print("Files available: ")
+    choices = []
+
+    for i,f in enumerate(custom_dir.iterdir()):
+        if f.is_file() and f.name.endswith(".html"):
+            console.print(f"{i}. [cyan]{f.name}[/cyan]")
+            choices.append(f.name)
+
+    choice = IntPrompt.ask("File number: ")
+    file_name = choices[choice-1]
+
+    return file_name

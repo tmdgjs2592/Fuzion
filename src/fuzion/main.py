@@ -6,8 +6,8 @@ import yaml
 from rich.console import Console
 
 from .config import default_config
-from .tui import prompt_user, format_prompt_user, custom_prompt_user
-from .orchestrator import run_corpus
+from .tui import prompt_user, format_prompt_user, custom_prompt_user, manual_prompt_user
+from .orchestrator import run_corpus, run_custom
 from .generators import DomatoGenerator, CustomGenerator
 from .util import write_json, safe_rmtree, ensure_dir
 
@@ -97,7 +97,17 @@ def main():
             )
         )
         logger.debug("run_corpus complete: summary=%s, result count=%d", summary, len(results))
-
+    elif (choice == 3):
+        html = manual_prompt_user(cfg.custom_dir)
+        console.print(f"[bold]Running[/bold] headless Chromium over a file: {html}")
+        summary, results = asyncio.run(
+            run_custom(
+                html_dir=cfg.custom_dir/html,
+                findings_dir=cfg.findings_dir,
+                nav_timeout_s=cfg.nav_timeout_s,
+                hard_timeout_s=cfg.hard_timeout_s,
+            )
+        )
     logger.debug("Assembling results list from %d entries", len(results))
     all_results = []
     for html_path, res in results:
