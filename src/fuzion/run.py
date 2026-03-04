@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import socket
 from dataclasses import dataclass
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
@@ -9,6 +10,9 @@ from typing import Optional
 from playwright.async_api import async_playwright
 
 from .util import ensure_dir, write_json, safe_rmtree, copytree_if_exists, now_ms
+
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class RunResult:
@@ -23,7 +27,9 @@ class _QuietHandler(SimpleHTTPRequestHandler):
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
-        return s.getsockname()[1]
+        port = s.getsockname()[1]
+    logger.debug("Allocated free port: %d", port)
+    return port
 
 class LocalFileServer:
     def __init__(self, root: Path):
@@ -31,6 +37,7 @@ class LocalFileServer:
         self.port = _free_port()
         self.httpd = ThreadingHTTPServer(("127.0.0.1", self.port), _QuietHandler)
         self.thread = Thread(target=self.httpd.serve_forever, daemon=True)
+        logger.debug("LocalFileServer initialised: root=%s, port=%d", self.root, self.port)
 
     def __enter__(self):
         self._old = Path.cwd()
@@ -38,6 +45,7 @@ class LocalFileServer:
         import os
         os.chdir(self.root)
         self.thread.start()
+        logger.debug("LocalFileServer started: serving %s on port %d (cwd changed from %s)", self.root, self.port, self._old)
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -45,6 +53,7 @@ class LocalFileServer:
         self.httpd.server_close()
         import os
         os.chdir(self._old)
+        logger.debug("LocalFileServer stopped: port %d released, cwd restored to %s", self.port, self._old)
 
 async def run_one(
     *,
@@ -54,19 +63,26 @@ async def run_one(
     hard_timeout_s: int,
 ) -> RunResult:
     start = now_ms()
+    logger.debug(
+        "run_one called: html_path=%s, findings_dir=%s, nav_timeout_s=%d, hard_timeout_s=%d",
+        html_path, findings_dir, nav_timeout_s, hard_timeout_s,
+    )
     ensure_dir(findings_dir)
 
     testcase_id = html_path.stem
     run_dir = findings_dir / testcase_id
     safe_rmtree(run_dir)
     ensure_dir(run_dir)
+    logger.debug("Run directory prepared: %s", run_dir)
 
     # Copy input always (even OK runs can be optionally kept; here we keep only if abnormal)
     input_copy = run_dir / "input.html"
     input_copy.write_bytes(html_path.read_bytes())
+    logger.debug("Input HTML copied to %s (%d bytes)", input_copy, html_path.stat().st_size)
 
     user_data_dir = run_dir / "user-data-dir"
     ensure_dir(user_data_dir)
+    logger.debug("User data dir prepared: %s", user_data_dir)
 
     meta = {
         "testcase": str(html_path),
@@ -79,10 +95,12 @@ async def run_one(
         with LocalFileServer(root=html_path.parent) as srv:
             url = f"http://127.0.0.1:{srv.port}/{html_path.name}"
             meta["url"] = url
+            logger.debug("Serving testcase at URL: %s", url)
 
             async with async_playwright() as p:
                 # Launch Chromium headless.
-                # Chrome’s headless mode is documented by Chromium team. :contentReference[oaicite:7]{index=7}
+                # Chrome's headless mode is documented by Chromium team. :contentReference[oaicite:7]{index=7}
+                logger.debug("Launching Chromium persistent context: user_data_dir=%s", user_data_dir)
                 context = await p.chromium.launch_persistent_context(
                     user_data_dir,
                     headless=True,
@@ -103,11 +121,14 @@ async def run_one(
                         "--mute-audio"
                     ],
                 )
+                logger.debug("Chromium context launched successfully")
                 page = await context.new_page()
+                logger.debug("New page opened")
 
                 crashed = {"flag": False, "msg": ""}
 
                 def on_crash():
+                    logger.debug("Page crash event received for testcase %s", testcase_id)
                     crashed["flag"] = True
                     crashed["msg"] = "page crash event"
 
@@ -115,59 +136,82 @@ async def run_one(
 
                 # Enforce hard timeout around the whole navigation/render window
                 async def do_nav():
+                    logger.debug("Navigating to %s (nav_timeout_s=%d)", url, nav_timeout_s)
                     await page.goto(url, wait_until="load", timeout=nav_timeout_s * 1000)
                     # Give it a tiny post-load window to trigger weird behavior
+                    logger.debug("Navigation complete, waiting 250ms post-load for testcase %s", testcase_id)
                     await page.wait_for_timeout(250)
 
                 try:
                     await asyncio.wait_for(do_nav(), timeout=hard_timeout_s)
                 except asyncio.TimeoutError:
                     # HANG -> hard timeout
+                    logger.debug("Hard timeout exceeded (%ds) for testcase %s — classifying as hang", hard_timeout_s, testcase_id)
                     meta["result"] = "hang"
                     write_json(run_dir / "meta.json", meta)
                     await context.close()
-                    return RunResult("hang", f"hard timeout > {hard_timeout_s}s", now_ms() - start)
+                    elapsed = now_ms() - start
+                    logger.debug("run_one returning: status=hang, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
+                    return RunResult("hang", f"hard timeout > {hard_timeout_s}s", elapsed)
                 except Exception as e:
                     # navigation timeout or other playwright errors
                     detail = repr(e)
+                    logger.debug("Exception during navigation for testcase %s: %s", testcase_id, detail)
                     # If page crashed, classify as crash
                     if crashed["flag"]:
+                        logger.debug("Crash flag set for testcase %s — classifying as crash", testcase_id)
                         meta["result"] = "crash"
                         meta["detail"] = crashed["msg"]
                         write_json(run_dir / "meta.json", meta)
                         await context.close()
-                        return RunResult("crash", crashed["msg"], now_ms() - start)
+                        elapsed = now_ms() - start
+                        logger.debug("run_one returning: status=crash, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
+                        return RunResult("crash", crashed["msg"], elapsed)
 
                     # Heuristic: Playwright "Timeout" indicates nav timeout
                     if "Timeout" in detail or "timeout" in detail.lower():
+                        logger.debug("Timeout keyword detected in exception for testcase %s — classifying as timeout", testcase_id)
                         meta["result"] = "timeout"
                         meta["detail"] = detail
                         write_json(run_dir / "meta.json", meta)
                         await context.close()
-                        return RunResult("timeout", detail, now_ms() - start)
+                        elapsed = now_ms() - start
+                        logger.debug("run_one returning: status=timeout, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
+                        return RunResult("timeout", detail, elapsed)
 
+                    logger.debug("Unclassified exception for testcase %s — classifying as error", testcase_id)
                     meta["result"] = "error"
                     meta["detail"] = detail
                     write_json(run_dir / "meta.json", meta)
                     await context.close()
-                    return RunResult("error", detail, now_ms() - start)
+                    elapsed = now_ms() - start
+                    logger.debug("run_one returning: status=error, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
+                    return RunResult("error", detail, elapsed)
 
                 # After navigation, if the page crash event fired, treat as crash
                 if crashed["flag"]:
+                    logger.debug("Post-navigation crash flag set for testcase %s — classifying as crash", testcase_id)
                     meta["result"] = "crash"
                     meta["detail"] = crashed["msg"]
                     write_json(run_dir / "meta.json", meta)
                     await context.close()
-                    return RunResult("crash", crashed["msg"], now_ms() - start)
+                    elapsed = now_ms() - start
+                    logger.debug("run_one returning: status=crash, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
+                    return RunResult("crash", crashed["msg"], elapsed)
 
                 # OK: delete run_dir to keep disk usage minimal (only keep abnormal)
+                logger.debug("Testcase %s loaded successfully — classifying as ok, removing run_dir %s", testcase_id, run_dir)
                 await context.close()
                 safe_rmtree(run_dir)
-                return RunResult("ok", "loaded", now_ms() - start)
+                elapsed = now_ms() - start
+                logger.debug("run_one returning: status=ok, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
+                return RunResult("ok", "loaded", elapsed)
 
     except Exception as e:
+        logger.debug("Outer exception for testcase %s: %s — classifying as error", testcase_id, repr(e))
         meta["result"] = "error"
         meta["detail"] = repr(e)
         write_json(run_dir / "meta.json", meta)
-        return RunResult("error", repr(e), now_ms() - start)
-
+        elapsed = now_ms() - start
+        logger.debug("run_one returning: status=error, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
+        return RunResult("error", repr(e), elapsed)

@@ -1,32 +1,44 @@
 import json
+import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
+logger = logging.getLogger(__name__)
+
+
 def generate_report(out_dir: Path, output_path: Path) -> None:
+    logger.debug("generate_report called: out_dir=%s, output_path=%s", out_dir, output_path)
     results_file = out_dir / "results.json"
+    logger.debug("Looking for results file at %s", results_file)
     if not results_file.exists():
+        logger.debug("results.json not found at %s, aborting report generation", results_file)
         print("No results.json found. Run `fuzion` first.")
         return
 
     data = json.loads(results_file.read_text())
     results = data["results"]
+    logger.debug("Loaded %d result(s) from %s", len(results), results_file)
 
     counts = {"ok": 0, "crash": 0, "timeout": 0, "hang": 0, "error": 0}
     for r in results:
         status = r.get("status", "unknown")
         if status in counts:
             counts[status] += 1
+    logger.debug("Status counts: ok=%d, crash=%d, timeout=%d, hang=%d, error=%d", counts["ok"], counts["crash"], counts["timeout"], counts["hang"], counts["error"])
 
     table_rows = ""
     pst = timezone(timedelta(hours=-8))
     failures = [r for r in results if r.get("status") != "ok"]
+    logger.debug("Found %d non-ok result(s) to include in failure table", len(failures))
     for r in failures:
         status = r.get("status", "unknown")
         detail = r.get("detail", "")
         if len(detail) > 80:
+            logger.debug("Truncating detail for testcase '%s' (original length %d)", r.get("testcase_id", ""), len(detail))
             detail = detail[:80] + "..."
         testcase_id = r.get("testcase_id", "")
         elapsed = r.get("elapsed_ms", 0)
+        logger.debug("Table row: testcase_id=%s, status=%s, elapsed_ms=%s", testcase_id, status, elapsed)
         table_rows += f"""
         <tr>
             <td>{testcase_id}</td>
@@ -36,6 +48,7 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
         </tr>"""
 
     total = len(results)
+    logger.debug("Total testcases: %d", total)
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -87,7 +100,9 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
 </body>
 </html>"""
 
+    logger.debug("Writing HTML report (%d chars) to %s", len(html), output_path)
     output_path.write_text(html)
+    logger.debug("Report written successfully to %s", output_path)
     print(f"Report written to {output_path}")
 
 if __name__ == "__main__":

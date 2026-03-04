@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import argparse
 from pathlib import Path
 import yaml
 from rich.console import Console
@@ -9,19 +11,36 @@ from .orchestrator import run_corpus
 from .generators import DomatoGenerator, CustomGenerator
 from .util import write_json, safe_rmtree, ensure_dir
 
+logger = logging.getLogger(__name__)
+
+
 def _reset_dir(p: Path) -> None:
+    logger.debug("Resetting directory: %s", p)
     safe_rmtree(p)
     ensure_dir(p)
+    logger.debug("Directory reset complete: %s", p)
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.WARNING,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
     console = Console()
     root = Path(__file__).resolve().parents[2]
+    logger.debug("Project root resolved to: %s", root)
     cfg = default_config(root)
+    logger.debug("Loaded default config: %s", cfg)
 
     choice = prompt_user(cfg)
+    logger.debug("User selected choice: %d", choice)
 
     if (choice == 1):
         n, fmt, domato_arg = format_prompt_user(cfg.bundles_yaml)
+        logger.debug("Format prompt returned: n=%d, fmt=%s, domato_arg=%s", n, fmt, domato_arg)
 
         console.print(f"\n[bold]Generating[/bold] {n} files using format [cyan]{fmt}[/cyan]...")
         gen = DomatoGenerator(
@@ -30,9 +49,15 @@ def main():
             format_key=fmt,
             domato_format_arg=domato_arg,
         )
+        logger.debug("DomatoGenerator instantiated: %s", gen)
         gen.generate(corpus_dir=cfg.corpus_dir, n=n)
+        logger.debug("DomatoGenerator.generate complete")
 
         console.print(f"[bold]Running[/bold] headless Chromium over corpus in: {cfg.corpus_dir}")
+        logger.debug(
+            "Starting run_corpus: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%s, hard_timeout_s=%s",
+            cfg.corpus_dir, cfg.findings_dir, cfg.nav_timeout_s, cfg.hard_timeout_s,
+        )
         summary, results = asyncio.run(
             run_corpus(
                 corpus_dir=cfg.corpus_dir,
@@ -41,18 +66,28 @@ def main():
                 hard_timeout_s=cfg.hard_timeout_s,
             )
         )
+        logger.debug("run_corpus complete: summary=%s, result count=%d", summary, len(results))
+
     elif choice == 2:
         n, seed = custom_prompt_user()
+        logger.debug("Custom prompt returned: n=%d, seed=%s", n, seed)
 
         rules_path = cfg.project_root / "grammars" / "html_rules.yaml"
+        logger.debug("Resolved rules_path: %s", rules_path)
         console.print(f"\n[bold]Generating[/bold] {n} custom files from: [cyan]{rules_path}[/cyan]...")
 
         _reset_dir(cfg.corpus_dir)
 
         gen = CustomGenerator(rules_path=rules_path, seed=seed)
+        logger.debug("CustomGenerator instantiated: %s", gen)
         gen.generate(corpus_dir=cfg.corpus_dir, n=n)
+        logger.debug("CustomGenerator.generate complete")
 
         console.print(f"[bold]Running[/bold] headless Chromium over corpus in: {cfg.corpus_dir}")
+        logger.debug(
+            "Starting run_corpus: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%s, hard_timeout_s=%s",
+            cfg.corpus_dir, cfg.findings_dir, cfg.nav_timeout_s, cfg.hard_timeout_s,
+        )
         summary, results = asyncio.run(
             run_corpus(
                 corpus_dir=cfg.corpus_dir,
@@ -61,9 +96,15 @@ def main():
                 hard_timeout_s=cfg.hard_timeout_s,
             )
         )
+        logger.debug("run_corpus complete: summary=%s, result count=%d", summary, len(results))
 
+    logger.debug("Assembling results list from %d entries", len(results))
     all_results = []
     for html_path, res in results:
+        logger.debug(
+            "Result: testcase_id=%s, status=%s, elapsed_ms=%s, detail=%s",
+            html_path.stem, res.status, res.elapsed_ms, res.detail,
+        )
         all_results.append({
             "testcase_id": html_path.stem,
             "testcase": str(html_path),
@@ -71,7 +112,11 @@ def main():
             "detail": res.detail,
             "elapsed_ms": res.elapsed_ms,
         })
-    write_json(cfg.out_dir / "results.json", {"results": all_results})
+
+    results_path = cfg.out_dir / "results.json"
+    logger.debug("Writing %d result(s) to %s", len(all_results), results_path)
+    write_json(results_path, {"results": all_results})
+    logger.debug("Results JSON written successfully")
 
     console.print("\n[bold]Summary[/bold]")
     console.print(f"  ok: {summary.ok}")
@@ -80,7 +125,11 @@ def main():
     console.print(f"  timeout: {summary.timeout}")
     console.print(f"  error: {summary.error}")
     console.print(f"\nFindings saved under: [green]{cfg.findings_dir}[/green]")
+    logger.debug(
+        "Final summary: ok=%d, crash=%d, hang=%d, timeout=%d, error=%d",
+        summary.ok, summary.crash, summary.hang, summary.timeout, summary.error,
+    )
+    logger.debug("main() complete")
 
 if __name__ == "__main__":
     main()
-

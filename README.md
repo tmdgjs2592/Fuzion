@@ -64,6 +64,8 @@ pip install -e .
 python -m playwright install chromium
 ```
 Run `fuzion` in the repository.
+For developers only:
+Run `fuzion --debug` to get extremely verbose logging statements for debugging purposes.
 
 You’ll be prompted for:
 ```
@@ -93,3 +95,8 @@ Naming example:
 html_only_000001.html
 html_css_000123.html
 ```
+
+## Disclaimer of AI-Usage 
+We chose to utilize AI in our project purely for the task of adding repetitive low impact but verbose logging statements in late stages of development. The AI model used was Claude’s Sonnet 4.6. 
+All generated code was human reviewed to ensure functionality was not touched and only logging statements were added. 
+The chat logs can be reviewed here: https://claude.ai/share/9e7e4d65-4903-45a4-81ae-9f7503332f0c 
