@@ -10,6 +10,8 @@ from .tui import prompt_user, format_prompt_user, custom_prompt_user, manual_pro
 from .orchestrator import run_corpus, run_custom
 from .generators import DomatoGenerator, CustomGenerator
 from .util import write_json, safe_rmtree, ensure_dir
+from .dedup import dedup_summary
+from .report import generate_report
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +137,22 @@ def main():
     console.print(f"  timeout: {summary.timeout}")
     console.print(f"  error: {summary.error}")
     console.print(f"\nFindings saved under: [green]{cfg.findings_dir}[/green]")
+
+    # group duplicate failures by status + error message to find unique bug types
+    ds = dedup_summary(results_path)
+    console.print(f"\n[bold]Deduplication[/bold]")
+    if ds["unique_types"] > 0:
+        console.print(f"  {ds['total_failures']} failure(s) → {ds['unique_types']} unique type(s)")
+        for g in ds["groups"]:
+            console.print(f"    [{g['status'].upper()}] {g['detail'][:60]} — {g['count']} testcase(s)")
+    else:
+        console.print("  [green]No failures found — nothing to deduplicate.[/green]")
+
+    # generate the HTML report dashboard from results.json
+    report_path = cfg.out_dir / "report.html"
+    generate_report(out_dir=cfg.out_dir, output_path=report_path)
+    console.print(f"\n[bold]Report[/bold] written to: [green]{report_path}[/green]")
+
     logger.debug(
         "Final summary: ok=%d, crash=%d, hang=%d, timeout=%d, error=%d",
         summary.ok, summary.crash, summary.hang, summary.timeout, summary.error,
