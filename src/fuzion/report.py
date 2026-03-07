@@ -2,6 +2,7 @@ import json
 import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
+from html import escape
 
 logger = logging.getLogger(__name__)
 
@@ -31,18 +32,21 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
     failures = [r for r in results if r.get("status") != "ok"]
     logger.debug("Found %d non-ok result(s) to include in failure table", len(failures))
     for r in failures:
-        status = r.get("status", "unknown")
-        detail = r.get("detail", "")
+        status = str(r.get("status", "unknown"))
+        status_class = status if status in counts else "unknown"
+        detail = str(r.get("detail", ""))
         if len(detail) > 80:
             logger.debug("Truncating detail for testcase '%s' (original length %d)", r.get("testcase_id", ""), len(detail))
             detail = detail[:80] + "..."
-        testcase_id = r.get("testcase_id", "")
-        elapsed = r.get("elapsed_ms", 0)
+        testcase_id = escape(str(r.get("testcase_id", "")))
+        elapsed = escape(str(r.get("elapsed_ms", 0)))
+        detail = escape(str(detail))
+        status_label = escape(status.upper())
         logger.debug("Table row: testcase_id=%s, status=%s, elapsed_ms=%s", testcase_id, status, elapsed)
         table_rows += f"""
         <tr>
             <td>{testcase_id}</td>
-            <td><span class="badge {status}">{status.upper()}</span></td>
+            <td><span class="badge {status_class}">{status_label}</span></td>
             <td>{elapsed}ms</td>
             <td>{detail}</td>
         </tr>"""
@@ -80,6 +84,7 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
         .badge.timeout {{ background: #78350f; color: #fcd34d; }}
         .badge.hang {{ background: #7c2d12; color: #fdba74; }}
         .badge.error {{ background: #4c1d95; color: #c4b5fd; }}
+        .badge.unknown {{ background: #1f2937; color: #d1d5db; }}
     </style>
 </head>
 <body>
