@@ -69,15 +69,19 @@ def custom_prompt_user() -> tuple[int, int | None]:
 
 def manual_prompt_user(custom_dir: Path):
     console = Console()
-    console.print("Files available: ")
-    choices = []
+    html_files = sorted(
+        [f for f in custom_dir.iterdir() if f.is_file() and f.suffix == ".html"],
+        key=lambda f: f.name,
+    )
+    if not html_files:
+        raise FileNotFoundError(f"No .html files found in {custom_dir}")
 
-    for i,f in enumerate(custom_dir.iterdir()):
-        if f.is_file() and f.name.endswith(".html"):
-            console.print(f"{i}. [cyan]{f.name}[/cyan]")
-            choices.append(f.name)
+    console.print("Files available:")
+    for i, f in enumerate(html_files, start=1):
+        console.print(f"{i}. [cyan]{f.name}[/cyan]")
 
-    choice = IntPrompt.ask("File number: ")
-    file_name = choices[choice-1]
-
-    return file_name
+    while True:
+        choice = IntPrompt.ask("File number", default=1)
+        if 1 <= choice <= len(html_files):
+            return html_files[choice - 1].name
+        console.print(f"[red]Invalid choice[/red] (enter 1-{len(html_files)})")
