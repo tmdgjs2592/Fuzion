@@ -12,6 +12,9 @@ dist/
 .venv/
 venv/
 
+# macOS metadata
+.DS_Store
+
 # Fuzion outputs
 out/
 corpus/generated/
