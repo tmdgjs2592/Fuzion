@@ -1,7 +1,7 @@
 import logging
 import subprocess
 from pathlib import Path
-from .util import ensure_dir
+from .util import ensure_dir, safe_rmtree
 import sys
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ def generate_html_files(
 
     # Domato generator storage
     tmp_out = corpus_dir / "_tmp_domato_out"
+    safe_rmtree(tmp_out)
     ensure_dir(tmp_out)
     logger.debug("Temporary Domato output directory: %s", tmp_out)
 
@@ -54,56 +55,65 @@ def generate_html_files(
     logger.debug("Attempting Pattern A command: %s", cmd_a)
 
     try:
-        result = subprocess.run(
-            cmd_a,
-            cwd=str(domato_dir),
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        logger.debug("Pattern A succeeded (exit 0)")
-        logger.debug("Domato stdout: %s", result.stdout.strip())
-        logger.debug("Domato stderr: %s", result.stderr.strip())
-    except subprocess.CalledProcessError as e:
-        """ 
-        # DEBUG PRINT
-        raise RuntimeError(
-            f"Domato failed (exit {e.returncode}).\n"
-            f"CMD: {e.cmd}\n\nSTDERR:\n{e.stderr}\n\nSTDOUT:\n{e.stdout}\n"
-        ) from e
-        """
-        logger.debug(
-            "Pattern A failed (exit %d); stdout=%r stderr=%r — falling back to Pattern B",
-            e.returncode, e.stdout.strip(), e.stderr.strip(),
-        )
-        # Fall back to Pattern B: generator.py --output_dir OUT --num_files N --grammar ...
-        cmd_b = args + ["--output_dir", str(tmp_out), "--num_files", str(n), "--template", template_grammar]
-        logger.debug("Attempting Pattern B command: %s", cmd_b)
-        result = subprocess.run(
-            cmd_b,
-            cwd=str(domato_dir),
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        logger.debug("Pattern B succeeded (exit 0)")
-        logger.debug("Domato stdout: %s", result.stdout.strip())
-        logger.debug("Domato stderr: %s", result.stderr.strip())
+        try:
+            result = subprocess.run(
+                cmd_a,
+                cwd=str(domato_dir),
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            logger.debug("Pattern A succeeded (exit 0)")
+            logger.debug("Domato stdout: %s", result.stdout.strip())
+            logger.debug("Domato stderr: %s", result.stderr.strip())
+        except subprocess.CalledProcessError as e:
+            """ 
+            # DEBUG PRINT
+            raise RuntimeError(
+                f"Domato failed (exit {e.returncode}).\n"
+                f"CMD: {e.cmd}\n\nSTDERR:\n{e.stderr}\n\nSTDOUT:\n{e.stdout}\n"
+            ) from e
+            """
+            logger.debug(
+                "Pattern A failed (exit %d); stdout=%r stderr=%r — falling back to Pattern B",
+                e.returncode, e.stdout.strip(), e.stderr.strip(),
+            )
+            # Fall back to Pattern B: generator.py --output_dir OUT --num_files N --grammar ...
+            cmd_b = args + ["--output_dir", str(tmp_out), "--num_files", str(n), "--template", template_grammar]
+            logger.debug("Attempting Pattern B command: %s", cmd_b)
+            result = subprocess.run(
+                cmd_b,
+                cwd=str(domato_dir),
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            logger.debug("Pattern B succeeded (exit 0)")
+            logger.debug("Domato stdout: %s", result.stdout.strip())
+            logger.debug("Domato stderr: %s", result.stderr.strip())
 
-    # Normalize names into corpus_dir as {format_key}_{i}.html
-    produced = sorted(tmp_out.glob("*.html"))
-    logger.debug("Domato produced %d .html file(s) in %s", len(produced), tmp_out)
-    if len(produced) == 0:
-        logger.debug("No .html files found in %s — raising RuntimeError", tmp_out)
-        raise RuntimeError("Domato produced no .html files. Check grammar args / domato version.")
+        # Normalize names into corpus_dir as {format_key}_{i}.html
+        produced = sorted(tmp_out.glob("*.html"))
+        logger.debug("Domato produced %d .html file(s) in %s", len(produced), tmp_out)
+        if len(produced) == 0:
+            logger.debug("No .html files found in %s — raising RuntimeError", tmp_out)
+            raise RuntimeError("Domato produced no .html files. Check grammar args / domato version.")
+        if len(produced) < n:
+            logger.debug(
+                "Domato produced fewer files than requested: produced=%d requested=%d",
+                len(produced), n,
+            )
+            raise RuntimeError(f"Domato produced {len(produced)} .html files, expected at least {n}.")
 
-    files_to_copy = produced[:n]
-    logger.debug("Copying %d file(s) into corpus_dir %s with format_key '%s'", len(files_to_copy), corpus_dir, format_key)
-    for i, src in enumerate(files_to_copy, start=1):
-        dst = corpus_dir / f"{format_key}_{i:06d}.html"
-        dst.write_bytes(src.read_bytes())
-        logger.debug("Copied %s -> %s (%d bytes)", src.name, dst.name, src.stat().st_size)
+        files_to_copy = produced[:n]
+        logger.debug("Copying %d file(s) into corpus_dir %s with format_key '%s'", len(files_to_copy), corpus_dir, format_key)
+        for i, src in enumerate(files_to_copy, start=1):
+            dst = corpus_dir / f"{format_key}_{i:06d}.html"
+            dst.write_bytes(src.read_bytes())
+            logger.debug("Copied %s -> %s (%d bytes)", src.name, dst.name, src.stat().st_size)
 
-    logger.debug("generate_html_files complete: %d file(s) written to %s", len(files_to_copy), corpus_dir)
+        logger.debug("generate_html_files complete: %d file(s) written to %s", len(files_to_copy), corpus_dir)
+    finally:
+        safe_rmtree(tmp_out)
