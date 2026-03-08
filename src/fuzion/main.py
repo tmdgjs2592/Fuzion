@@ -144,7 +144,7 @@ def main():
     if ds["unique_types"] > 0:
         console.print(f"  {ds['total_failures']} failure(s) → {ds['unique_types']} unique type(s)")
         for g in ds["groups"]:
-            console.print(f"    [{g['status'].upper()}] {g['detail'][:60]} — {g['count']} testcase(s)")
+            console.print(f"    [{g['status'].upper()}] root cause: {g['root_cause']} — {g['count']} testcase(s)")
     else:
         console.print("  [green]No failures found — nothing to deduplicate.[/green]")
 
