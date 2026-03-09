@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from html import escape
+from .dedup import classify_html
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +43,15 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
         elapsed = escape(str(r.get("elapsed_ms", 0)))
         detail = escape(str(detail))
         status_label = escape(status.upper())
-        logger.debug("Table row: testcase_id=%s, status=%s, elapsed_ms=%s", testcase_id, status, elapsed)
+        # classify the HTML file to get the root cause label
+        root_cause = classify_html(Path(r.get("testcase", "")))
+        root_cause_display = escape(root_cause.replace("_", " "))
+        logger.debug("Table row: testcase_id=%s, status=%s, root_cause=%s", testcase_id, status, root_cause)
         table_rows += f"""
         <tr>
             <td>{testcase_id}</td>
             <td><span class="badge {status_class}">{status_label}</span></td>
+            <td><span class="root-cause">{root_cause_display}</span></td>
             <td>{elapsed}ms</td>
             <td>{detail}</td>
         </tr>"""
@@ -85,6 +90,7 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
         .badge.hang {{ background: #7c2d12; color: #fdba74; }}
         .badge.error {{ background: #4c1d95; color: #c4b5fd; }}
         .badge.unknown {{ background: #1f2937; color: #d1d5db; }}
+        .root-cause {{ color: #67e8f9; font-family: monospace; font-size: 0.85rem; }}
     </style>
 </head>
 <body>
@@ -99,7 +105,7 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
         <div class="card error"><div class="number">{counts["error"]}</div><div class="label">Errors</div></div>
     </div>
     <table>
-        <thead><tr><th>Testcase</th><th>Result</th><th>Elapsed</th><th>Detail</th></tr></thead>
+        <thead><tr><th>Testcase</th><th>Result</th><th>Root Cause</th><th>Elapsed</th><th>Detail</th></tr></thead>
         <tbody>{table_rows}</tbody>
     </table>
 </body>
