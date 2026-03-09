@@ -23,8 +23,11 @@ def prompt_user(cfg: FuzionConfig):
     console.print("1. [cyan]Generate[/cyan]")
     console.print("2. [cyan]Custom[/cyan]")
     console.print("3. [cyan]Manual[/cyan]")
-    choice = IntPrompt.ask("Choice")
-    choice = max(1, min(choice, 3))
+    while True:
+        choice = IntPrompt.ask("Choice")
+        if 1 <= choice <= 3:
+            break
+        console.print("[red]Invalid choice[/red] (enter 1-3)")
     logger.debug("User selected choice: %d", choice)
 
     return choice
@@ -39,8 +42,11 @@ def format_prompt_user(bundles_yaml: Path) -> tuple[int, str, str]:
     for i, k in enumerate(keys, start=1):
         console.print(f"  {i}. [cyan]{k}[/cyan] — {formats[k].get('description','')}")
 
-    choice = IntPrompt.ask("Format number")
-    choice = max(1, min(choice, len(keys)))
+    while True:
+        choice = IntPrompt.ask("Format number")
+        if 1 <= choice <= len(keys):
+            break
+        console.print(f"[red]Invalid choice[/red] (enter 1-{len(keys)})")
     fmt = keys[choice - 1]
     logger.debug("User selected format index %d: '%s'", choice, fmt)
 
