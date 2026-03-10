@@ -114,8 +114,6 @@ async def run_one(
                         "--no-default-browser-check",
                         "--disable-dev-shm-usage",
                         "--disable-popup-blocking",
-                        "--disable-renderer-backgrounding",
-                        "--disable-background-timer-throttling",
                         "--disable-client-side-phishing-detection",
                         "--disable-features=Translate,BackForwardCache",
                         "--mute-audio"
@@ -137,10 +135,37 @@ async def run_one(
                 # Enforce hard timeout around the whole navigation/render window
                 async def do_nav():
                     logger.debug("Navigating to %s (nav_timeout_s=%d)", url, nav_timeout_s)
-                    await page.goto(url, wait_until="load", timeout=nav_timeout_s * 1000)
-                    # Give it a tiny post-load window to trigger weird behavior
-                    logger.debug("Navigation complete, waiting 250ms post-load for testcase %s", testcase_id)
-                    await page.wait_for_timeout(250)
+                    await page.goto(url, wait_until="load", timeout=nav_timeout_s * 100000)
+                    logger.debug("Navigation complete, starting stress phase for testcase %s", testcase_id)
+
+                    # dispatch common events that trigger handlers in fuzzed HTML
+                    await page.evaluate("""() => {
+                        window.dispatchEvent(new Event('resize'));
+                        window.dispatchEvent(new Event('scroll'));
+                        document.dispatchEvent(new Event('DOMContentLoaded'));
+                    }""")
+
+                    # pump the real event loop with setTimeout-based ticks
+                    # rAF is unreliable in headless — use setTimeout chain instead
+                    await page.evaluate("""() => new Promise(resolve => {
+                        let ticks = 0;
+                        function tick() {
+                            if (++ticks >= 50) return resolve();
+                            // force style recalc and layout on each tick
+                            document.body && document.body.getBoundingClientRect();
+                            setTimeout(tick, 20);
+                        }
+                        setTimeout(tick, 20);
+                    })""")
+
+                    # trigger GC if available to surface use-after-free bugs
+                    await page.evaluate("""() => {
+                        if (typeof window.gc === 'function') window.gc();
+                    }""")
+
+                    # final buffer
+                    await page.wait_for_timeout(500)
+                    logger.debug("Stress phase complete for testcase %s", testcase_id)
 
                 try:
                     await asyncio.wait_for(do_nav(), timeout=hard_timeout_s)
