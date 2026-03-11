@@ -123,6 +123,7 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
         .dedup-label {{ font-family: monospace; color: #67e8f9; }}
         .dedup-status {{ font-size: 0.8rem; font-weight: 600; }}
         .dedup-none {{ color: #22c55e; }}
+        .empty-state {{ color: #22c55e; text-align: center; padding: 40px; font-size: 1.1rem; }}
     </style>
 </head>
 <body>
@@ -138,10 +139,10 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
     </div>
     {dedup_html}
     <h2>Failure Details</h2>
-    <table>
+    {"<p class='empty-state'>No failures found — all testcases passed.</p>" if not table_rows else f"""<table>
         <thead><tr><th>Testcase</th><th>Result</th><th>Root Cause</th><th>Elapsed</th><th>Detail</th></tr></thead>
         <tbody>{table_rows}</tbody>
-    </table>
+    </table>"""}
 </body>
 </html>"""
 
