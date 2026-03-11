@@ -35,17 +35,20 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
     for r in failures:
         status = str(r.get("status", "unknown"))
         status_class = status if status in counts else "unknown"
+        status_class = escape(status_class, quote=True)
         detail = str(r.get("detail", ""))
         if len(detail) > 80:
             logger.debug("Truncating detail for testcase '%s' (original length %d)", r.get("testcase_id", ""), len(detail))
             detail = detail[:80] + "..."
-        testcase_id = escape(str(r.get("testcase_id", "")))
-        elapsed = escape(str(r.get("elapsed_ms", 0)))
-        detail = escape(str(detail))
-        status_label = escape(status.upper())
+        testcase_id = escape(str(r.get("testcase_id", "")), quote=True)
+        elapsed = escape(str(r.get("elapsed_ms", 0)), quote=True)
+        detail = escape(str(detail), quote=True)
+        status_label = escape(status.upper(), quote=True)
+
         # classify the HTML file to get the root cause label
-        root_cause = classify_html(Path(r.get("testcase", "")))
-        root_cause_display = escape(root_cause.replace("_", " "))
+        testcase_path = r.get("testcase", "")
+        root_cause = classify_html(Path(testcase_path)) if testcase_path else "unknown"
+        root_cause_display = escape(root_cause.replace("_", " "), quote=True)
         logger.debug("Table row: testcase_id=%s, status=%s, root_cause=%s", testcase_id, status, root_cause)
         table_rows += f"""
         <tr>

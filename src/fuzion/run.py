@@ -135,7 +135,7 @@ async def run_one(
                 # Enforce hard timeout around the whole navigation/render window
                 async def do_nav():
                     logger.debug("Navigating to %s (nav_timeout_s=%d)", url, nav_timeout_s)
-                    await page.goto(url, wait_until="load", timeout=nav_timeout_s * 100000)
+                    await page.goto(url, wait_until="load", timeout=nav_timeout_s * 1000)
                     logger.debug("Navigation complete, starting stress phase for testcase %s", testcase_id)
 
                     # dispatch common events that trigger handlers in fuzzed HTML

@@ -22,7 +22,7 @@ from collections import defaultdict
 # crash, hang, or timeout. Returns a short label describing the root cause.
 # Checks are ordered from most specific to least specific — first match wins.
 def classify_html(html_path: Path) -> str:
-    if not html_path.exists():
+    if not html_path.exists() or not html_path.is_file():
         return "unknown"
 
     content = html_path.read_text(errors="ignore")
