@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from html import escape
-from .dedup import classify_html
+from .dedup import classify_html, dedup_summary
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,27 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
     total = len(results)
     logger.debug("Total testcases: %d", total)
 
+    # build dedup summary section for the report
+    ds = dedup_summary(results_file)
+    if ds["unique_types"] > 0:
+        dedup_html = f'<div class="dedup-section"><h2>Deduplication — {ds["total_failures"]} failure(s) → {ds["unique_types"]} unique type(s)</h2>'
+        for g in ds["groups"]:
+            status_upper = escape(g["status"].upper())
+            root_cause_label = escape(g["root_cause"].replace("_", " "))
+            count = g["count"]
+            testcase_ids = ", ".join(escape(t["testcase_id"]) for t in g["testcases"][:5])
+            more = f" ... and {count - 5} more" if count > 5 else ""
+            dedup_html += f"""
+            <div class="dedup-group">
+                <div class="dedup-count">{count}x</div>
+                <span class="badge {escape(g['status'])}">{status_upper}</span>
+                <span class="dedup-label">{root_cause_label}</span>
+                <span style="color:#94a3b8; font-size:0.8rem;">{testcase_ids}{more}</span>
+            </div>"""
+        dedup_html += "</div>"
+    else:
+        dedup_html = '<div class="dedup-section"><p class="dedup-none">No failures found — nothing to deduplicate.</p></div>'
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -94,6 +115,14 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
         .badge.error {{ background: #4c1d95; color: #c4b5fd; }}
         .badge.unknown {{ background: #1f2937; color: #d1d5db; }}
         .root-cause {{ color: #67e8f9; font-family: monospace; font-size: 0.85rem; }}
+        h2 {{ font-size: 1.4rem; margin-bottom: 16px; margin-top: 8px; }}
+        .dedup-section {{ background: #1e293b; border-radius: 12px; padding: 24px; margin-bottom: 40px; }}
+        .dedup-group {{ display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #334155; }}
+        .dedup-group:last-child {{ border-bottom: none; }}
+        .dedup-count {{ font-size: 1.5rem; font-weight: bold; color: #38bdf8; min-width: 40px; text-align: right; }}
+        .dedup-label {{ font-family: monospace; color: #67e8f9; }}
+        .dedup-status {{ font-size: 0.8rem; font-weight: 600; }}
+        .dedup-none {{ color: #22c55e; }}
     </style>
 </head>
 <body>
@@ -107,6 +136,8 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
         <div class="card hang"><div class="number">{counts["hang"]}</div><div class="label">Hangs</div></div>
         <div class="card error"><div class="number">{counts["error"]}</div><div class="label">Errors</div></div>
     </div>
+    {dedup_html}
+    <h2>Failure Details</h2>
     <table>
         <thead><tr><th>Testcase</th><th>Result</th><th>Root Cause</th><th>Elapsed</th><th>Detail</th></tr></thead>
         <tbody>{table_rows}</tbody>

@@ -59,6 +59,23 @@ def classify_html(html_path: Path) -> str:
     if depth > 80:
         return "deep_dom_nesting"
 
+    # check for recursive JS functions that call themselves (stack overflow)
+    # e.g. function f(){return f()} f()
+    if re.search(r"function\s+(\w+)\s*\([^)]*\)\s*\{[^}]*\1\s*\(", content):
+        return "js_recursion"
+
+    # check for use-after-free patterns — remove element then access it
+    if re.search(r"removeChild", content) and re.search(r"\.style|\.appendChild|\.textContent", content):
+        if re.search(r"innerHTML\s*=\s*['\"]", content):
+            return "use_after_free"
+
+    # large/complex pages (1000+ lines of CSS/HTML) that overwhelm the renderer
+    # these are typically Domato-generated files with massive style blocks
+    num_lines = content.count("\n")
+    num_css_props = len(re.findall(r"[\w-]+\s*:\s*[^;]+;", content))
+    if num_lines > 500 and num_css_props > 200:
+        return "complex_page"
+
     # no known pattern matched
     return "unknown"
 
