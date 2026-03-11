@@ -73,6 +73,13 @@ def _random_tag(rules: dict) -> str:
 VOID_TAGS = {"img", "input", "br", "hr", "meta", "link", "area",
              "base", "col", "embed", "source", "track", "wbr"}
 
+def _generate_script(rules: dict) -> str:
+    patterns = rules.get("js_patterns", [])
+    if not patterns:
+        return ""
+    pattern = random.choice(patterns)
+    logger.debug("Selected JS pattern: %r", pattern[:50])
+    return f"<script>\n{pattern}\n</script>"
 
 # Recursively build a random DOM node with children up to max_depth
 def _generate_node(rules: dict, depth: int) -> str:
@@ -106,6 +113,7 @@ def generate_page(rules: dict) -> str:
     num_top_level = random.randint(3, 8)
     logger.debug("Generating page with %d top-level node(s)", num_top_level)
     body_content = "\n".join(_generate_node(rules, 0) for _ in range(num_top_level))
+    script = _generate_script(rules)
     logger.debug("Page body assembled, total body length: %d chars", len(body_content))
 
     return f"""<!DOCTYPE html>
@@ -116,6 +124,7 @@ def generate_page(rules: dict) -> str:
 </head>
 <body>
 {body_content}
+{script}
 </body>
 </html>"""
 

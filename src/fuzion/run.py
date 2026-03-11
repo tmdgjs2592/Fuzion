@@ -124,13 +124,19 @@ async def run_one(
                 logger.debug("New page opened")
 
                 crashed = {"flag": False, "msg": ""}
+                js_errors = []
 
                 def on_crash():
                     logger.debug("Page crash event received for testcase %s", testcase_id)
                     crashed["flag"] = True
                     crashed["msg"] = "page crash event"
 
+                def on_pageerror(err):
+                    logger.debug("JS error for testcase %s: %s", testcase_id, err)
+                    js_errors.append(str(err))
+
                 page.on("crash", lambda: on_crash())
+                page.on("pageerror", on_pageerror)
 
                 # Enforce hard timeout around the whole navigation/render window
                 async def do_nav():
@@ -187,11 +193,21 @@ async def run_one(
                         logger.debug("Crash flag set for testcase %s — classifying as crash", testcase_id)
                         meta["result"] = "crash"
                         meta["detail"] = crashed["msg"]
+                        meta["js_errors"] = js_errors
                         write_json(run_dir / "meta.json", meta)
                         await context.close()
                         elapsed = now_ms() - start
                         logger.debug("run_one returning: status=crash, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
                         return RunResult("crash", crashed["msg"], elapsed)
+                    if js_errors:
+                        logger.debug("JS errors detected for testcase %s — classifying as error", testcase_id)
+                        meta["result"] = "error"
+                        meta["detail"] = js_errors[0]
+                        meta["js_errors"] = js_errors
+                        write_json(run_dir / "meta.json", meta)
+                        await context.close()
+                        elapsed = now_ms() - start
+                        return RunResult("error", js_errors[0], elapsed)
 
                     # Heuristic: Playwright "Timeout" indicates nav timeout
                     if "Timeout" in detail or "timeout" in detail.lower():

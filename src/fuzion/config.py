@@ -25,7 +25,7 @@ def default_config(project_root: Path) -> FuzionConfig:
         corpus_dir=out_dir / "corpus",
         findings_dir=out_dir / "findings",
         template_dir=project_root / "templates",
-        custom_dir=project_root / "custom",
+        custom_dir=project_root / "manual",
         bundles_yaml=project_root / "grammars" / "bundles.yaml",
     )
 

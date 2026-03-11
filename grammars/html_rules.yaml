@@ -21,3 +21,37 @@ attributes:
 
 max_depth: 6
 max_children: 4
+
+js_patterns:
+  - "while(true){}"
+  - "for(;;){}"
+  - "null.property"
+  - "var x = null; x.bar.baz"
+  - "function f(){return f()} f()"
+  - |
+    var el = document.createElement('div');
+    document.body.appendChild(el);
+    document.body.removeChild(el);
+    el.appendChild(document.createElement('span'));
+  - |
+    var els = [];
+    for(var i=0;i<1000;i++){
+      var e = document.createElement('div');
+      document.body.appendChild(e);
+      els.push(e);
+    }
+    document.body.innerHTML = '';
+    els[500].style.color = 'red';
+  - |
+    var bomb = [];
+    while (true) {
+      bomb.push(new Array(1000000).fill("AAAAAAAAAA"));
+    }
+  - |
+    var el = document.body;
+    for (var i = 0; i < 50000; i++) {
+      var child = document.createElement("div");
+      child.textContent = i;
+      el.appendChild(child);
+      el = child;
+    }
