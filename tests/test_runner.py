@@ -15,18 +15,26 @@ import pytest
 
 
 class FakePage:
-    def __init__(self, *, goto_raises=None, crash_during_goto=False, crash_during_wait=False):
+    def __init__(
+        self,
+        *,
+        goto_raises=None,
+        crash_during_goto=False,
+        crash_during_wait=False,
+        pageerror_during_goto=None,
+    ):
         self._handlers = {}
         self._goto_raises = goto_raises
         self._crash_during_goto = crash_during_goto
         self._crash_during_wait = crash_during_wait
+        self._pageerror_during_goto = pageerror_during_goto
 
     def on(self, event, cb):
         self._handlers.setdefault(event, []).append(cb)
 
-    def _fire(self, event):
+    def _fire(self, event, *args):
         for cb in self._handlers.get(event, []):
-            cb()
+            cb(*args)
 
     async def evaluate(self, js):  
         pass
@@ -34,6 +42,8 @@ class FakePage:
     async def goto(self, url, wait_until, timeout):
         if self._crash_during_goto:
             self._fire("crash")
+        if self._pageerror_during_goto is not None:
+            self._fire("pageerror", self._pageerror_during_goto)
         if self._goto_raises is not None:
             raise self._goto_raises
 
@@ -87,6 +97,16 @@ class FakeLocalFileServer:
 
     def __exit__(self, *_):
         return False
+
+
+class FakeJsError:
+    def __init__(self, message: str, stack: str):
+        self.name = "ReferenceError"
+        self.message = message
+        self.stack = stack
+
+    def __str__(self) -> str:
+        return self.message
 
 
 def _write_html(path):
@@ -284,6 +304,39 @@ async def test_error_preserves_evidence(tmp_path, monkeypatch):
     assert run_dir.exists()
     assert (run_dir / "input.html").exists()
     assert _read_meta(run_dir)["result"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_js_pageerror_stack_is_preserved_in_meta_and_detail(tmp_path, monkeypatch):
+    import fuzion.run as runner
+    html = tmp_path / "case_000008.html"
+    _write_html(html)
+    findings_dir = tmp_path / "findings"
+    js_err = FakeJsError(
+        "x is not defined",
+        "ReferenceError: x is not defined\n    at fn (http://x/test.js:1:1)",
+    )
+    _patch(
+        monkeypatch,
+        runner,
+        FakePage(goto_raises=RuntimeError("nav failed"), pageerror_during_goto=js_err),
+    )
+
+    res = await runner.run_one(
+        html_path=html,
+        findings_dir=findings_dir,
+        nav_timeout_s=1,
+        hard_timeout_s=1,
+    )
+
+    run_dir = findings_dir / html.stem
+    meta = _read_meta(run_dir)
+    assert res.status == "error"
+    assert "ReferenceError: x is not defined" in res.detail
+    assert meta["result"] == "error"
+    assert "js_errors" in meta
+    assert meta["js_errors"][0]["name"] == "ReferenceError"
+    assert "at fn" in meta["js_errors"][0]["stack"]
 
 
 @pytest.mark.asyncio
