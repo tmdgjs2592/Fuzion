@@ -173,7 +173,7 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
     </html>"""
 
     logger.debug("Writing HTML report (%d chars) to %s", len(html), output_path)
-    output_path.write_text(html)
+    output_path.write_text(html, encoding="utf-8")
     logger.debug("Report written successfully to %s", output_path)
     print(f"Report written to {output_path}")
 
