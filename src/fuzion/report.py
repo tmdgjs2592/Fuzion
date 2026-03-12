@@ -83,68 +83,94 @@ def generate_report(out_dir: Path, output_path: Path) -> None:
     else:
         dedup_html = '<div class="dedup-section"><p class="dedup-none">No failures found — nothing to deduplicate.</p></div>'
 
+    failure_html = (
+        "<p class='empty-state'>No failures found — all testcases passed.</p>"
+        if not table_rows
+        else f"""
+        <table>
+            <thead>
+                <tr>
+                    <th>Testcase</th>
+                    <th>Result</th>
+                    <th>Root Cause</th>
+                    <th>Elapsed</th>
+                    <th>Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                {table_rows}
+            </tbody>
+        </table>
+        """
+    )
+
     html = f"""<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Fuzion Report</title>
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; padding: 40px; }}
-        h1 {{ font-size: 2rem; margin-bottom: 8px; }}
-        .subtitle {{ color: #94a3b8; margin-bottom: 32px; }}
-        .cards {{ display: flex; gap: 16px; margin-bottom: 40px; }}
-        .card {{ background: #1e293b; border-radius: 12px; padding: 24px; flex: 1; text-align: center; }}
-        .card .number {{ font-size: 2.5rem; font-weight: bold; }}
-        .card .label {{ color: #94a3b8; margin-top: 4px; font-size: 0.9rem; text-transform: uppercase; }}
-        .card.ok .number {{ color: #22c55e; }}
-        .card.crash .number {{ color: #ef4444; }}
-        .card.timeout .number {{ color: #f59e0b; }}
-        .card.hang .number {{ color: #f97316; }}
-        .card.error .number {{ color: #a78bfa; }}
-        .card.total .number {{ color: #38bdf8; }}
-        table {{ width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 12px; overflow: hidden; }}
-        th {{ background: #334155; text-align: left; padding: 14px 16px; font-size: 0.85rem; text-transform: uppercase; color: #94a3b8; }}
-        td {{ padding: 12px 16px; border-top: 1px solid #334155; }}
-        tr:hover {{ background: #253044; }}
-        .badge {{ padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }}
-        .badge.ok {{ background: #14532d; color: #86efac; }}
-        .badge.crash {{ background: #7f1d1d; color: #fca5a5; }}
-        .badge.timeout {{ background: #78350f; color: #fcd34d; }}
-        .badge.hang {{ background: #7c2d12; color: #fdba74; }}
-        .badge.error {{ background: #4c1d95; color: #c4b5fd; }}
-        .badge.unknown {{ background: #1f2937; color: #d1d5db; }}
-        .root-cause {{ color: #67e8f9; font-family: monospace; font-size: 0.85rem; }}
-        h2 {{ font-size: 1.4rem; margin-bottom: 16px; margin-top: 8px; }}
-        .dedup-section {{ background: #1e293b; border-radius: 12px; padding: 24px; margin-bottom: 40px; }}
-        .dedup-group {{ display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #334155; }}
-        .dedup-group:last-child {{ border-bottom: none; }}
-        .dedup-count {{ font-size: 1.5rem; font-weight: bold; color: #38bdf8; min-width: 40px; text-align: right; }}
-        .dedup-label {{ font-family: monospace; color: #67e8f9; }}
-        .dedup-status {{ font-size: 0.8rem; font-weight: 600; }}
-        .dedup-none {{ color: #22c55e; }}
-        .empty-state {{ color: #22c55e; text-align: center; padding: 40px; font-size: 1.1rem; }}
-    </style>
-</head>
-<body>
-    <h1>Fuzion Report</h1>
-    <p class="subtitle">Generated {datetime.now(pst).strftime("%B %d, %Y at %I:%M %p PST")}</p>
-    <div class="cards">
-        <div class="card total"><div class="number">{total}</div><div class="label">Total Runs</div></div>
-        <div class="card ok"><div class="number">{counts["ok"]}</div><div class="label">OK</div></div>
-        <div class="card crash"><div class="number">{counts["crash"]}</div><div class="label">Crashes</div></div>
-        <div class="card timeout"><div class="number">{counts["timeout"]}</div><div class="label">Timeouts</div></div>
-        <div class="card hang"><div class="number">{counts["hang"]}</div><div class="label">Hangs</div></div>
-        <div class="card error"><div class="number">{counts["error"]}</div><div class="label">Errors</div></div>
-    </div>
-    {dedup_html}
-    <h2>Failure Details</h2>
-    {"<p class='empty-state'>No failures found — all testcases passed.</p>" if not table_rows else f"""<table>
-        <thead><tr><th>Testcase</th><th>Result</th><th>Root Cause</th><th>Elapsed</th><th>Detail</th></tr></thead>
-        <tbody>{table_rows}</tbody>
-    </table>"""}
-</body>
-</html>"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Fuzion Report</title>
+        <style>
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; padding: 40px; }}
+            h1 {{ font-size: 2rem; margin-bottom: 8px; }}
+            .subtitle {{ color: #94a3b8; margin-bottom: 32px; }}
+            .cards {{ display: flex; gap: 16px; margin-bottom: 40px; flex-wrap: wrap; }}
+            .card {{ background: #1e293b; border-radius: 12px; padding: 24px; flex: 1; min-width: 140px; text-align: center; }}
+            .card .number {{ font-size: 2.5rem; font-weight: bold; }}
+            .card .label {{ color: #94a3b8; margin-top: 4px; font-size: 0.9rem; text-transform: uppercase; }}
+            .card.ok .number {{ color: #22c55e; }}
+            .card.crash .number {{ color: #ef4444; }}
+            .card.timeout .number {{ color: #f59e0b; }}
+            .card.hang .number {{ color: #f97316; }}
+            .card.error .number {{ color: #a78bfa; }}
+            .card.total .number {{ color: #38bdf8; }}
+
+            table {{ width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 12px; overflow: hidden; }}
+            th {{ background: #334155; text-align: left; padding: 14px 16px; font-size: 0.85rem; text-transform: uppercase; color: #94a3b8; }}
+            td {{ padding: 12px 16px; border-top: 1px solid #334155; vertical-align: top; }}
+            tr:hover {{ background: #253044; }}
+
+            .badge {{ display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }}
+            .badge.ok {{ background: #14532d; color: #86efac; }}
+            .badge.crash {{ background: #7f1d1d; color: #fca5a5; }}
+            .badge.timeout {{ background: #78350f; color: #fcd34d; }}
+            .badge.hang {{ background: #7c2d12; color: #fdba74; }}
+            .badge.error {{ background: #4c1d95; color: #c4b5fd; }}
+            .badge.unknown {{ background: #1f2937; color: #d1d5db; }}
+
+            .root-cause {{ color: #67e8f9; font-family: monospace; font-size: 0.85rem; }}
+            h2 {{ font-size: 1.4rem; margin-bottom: 16px; margin-top: 8px; }}
+
+            .dedup-section {{ background: #1e293b; border-radius: 12px; padding: 24px; margin-bottom: 40px; }}
+            .dedup-group {{ display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #334155; }}
+            .dedup-group:last-child {{ border-bottom: none; }}
+            .dedup-count {{ font-size: 1.5rem; font-weight: bold; color: #38bdf8; min-width: 40px; text-align: right; }}
+            .dedup-label {{ font-family: monospace; color: #67e8f9; }}
+            .dedup-status {{ font-size: 0.8rem; font-weight: 600; }}
+            .dedup-none {{ color: #22c55e; }}
+
+            .empty-state {{ color: #22c55e; text-align: center; padding: 40px; font-size: 1.1rem; }}
+        </style>
+    </head>
+    <body>
+        <h1>Fuzion Report</h1>
+        <p class="subtitle">Generated {datetime.now(pst).strftime("%B %d, %Y at %I:%M %p PST")}</p>
+
+        <div class="cards">
+            <div class="card total"><div class="number">{total}</div><div class="label">Total Runs</div></div>
+            <div class="card ok"><div class="number">{counts["ok"]}</div><div class="label">OK</div></div>
+            <div class="card crash"><div class="number">{counts["crash"]}</div><div class="label">Crashes</div></div>
+            <div class="card timeout"><div class="number">{counts["timeout"]}</div><div class="label">Timeouts</div></div>
+            <div class="card hang"><div class="number">{counts["hang"]}</div><div class="label">Hangs</div></div>
+            <div class="card error"><div class="number">{counts["error"]}</div><div class="label">Errors</div></div>
+        </div>
+
+        {dedup_html}
+
+        <h2>Failure Details</h2>
+        {failure_html}
+    </body>
+    </html>"""
 
     logger.debug("Writing HTML report (%d chars) to %s", len(html), output_path)
     output_path.write_text(html)
