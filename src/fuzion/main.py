@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 import yaml
 from rich.console import Console
+from rich.prompt import Confirm
 
 from .config import default_config
 from .tui import prompt_user, format_prompt_user, custom_prompt_user, manual_prompt_user
@@ -22,6 +23,21 @@ def _reset_dir(p: Path) -> None:
     ensure_dir(p)
     logger.debug("Directory reset complete: %s", p)
 
+
+def _maybe_clear_out_dir(*, out_dir: Path, console: Console) -> None:
+    ensure_dir(out_dir)
+    if not any(out_dir.iterdir()):
+        return
+
+    console.print(
+        f"[yellow]Warning:[/yellow] Output directory [cyan]{out_dir}[/cyan] is not empty."
+    )
+    if Confirm.ask("Clear output directory before this run?", default=False):
+        _reset_dir(out_dir)
+        console.print(f"[green]Cleared[/green] output directory: [cyan]{out_dir}[/cyan]")
+    else:
+        console.print("[dim]Keeping existing output directory contents.[/dim]")
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
@@ -37,6 +53,7 @@ def main():
     logger.debug("Project root resolved to: %s", root)
     cfg = default_config(root)
     logger.debug("Loaded default config: %s", cfg)
+    _maybe_clear_out_dir(out_dir=cfg.out_dir, console=console)
 
     # jobs
     jobs = max(1, args.jobs) if args.jobs is not None else cfg.max_concurrency
