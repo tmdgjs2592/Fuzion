@@ -6,6 +6,7 @@ from functools import partial
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from threading import Thread
+from typing import Any
 
 from playwright.async_api import async_playwright
 
@@ -23,6 +24,27 @@ class RunResult:
 class _QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):  # silence server logs
         return
+
+
+def _serialize_page_error(err: Any) -> dict[str, str]:
+    item: dict[str, str] = {"text": str(err)}
+    for field in ("name", "message", "stack"):
+        value = getattr(err, field, None)
+        if value is not None:
+            item[field] = str(value)
+    return item
+
+
+def _primary_js_error_detail(js_errors: list[dict[str, str]]) -> str:
+    if not js_errors:
+        return "javascript error"
+    first = js_errors[0]
+    return first.get("stack") or first.get("message") or first.get("text", "javascript error")
+
+
+def _attach_js_errors(meta: dict, js_errors: list[dict[str, str]]) -> None:
+    if js_errors:
+        meta["js_errors"] = js_errors
 
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -120,7 +142,7 @@ async def run_one(
                 logger.debug("New page opened")
 
                 crashed = {"flag": False, "msg": ""}
-                js_errors = []
+                js_errors: list[dict[str, str]] = []
 
                 def on_crash():
                     logger.debug("Page crash event received for testcase %s", testcase_id)
@@ -129,7 +151,7 @@ async def run_one(
 
                 def on_pageerror(err):
                     logger.debug("JS error for testcase %s: %s", testcase_id, err)
-                    js_errors.append(str(err))
+                    js_errors.append(_serialize_page_error(err))
 
                 page.on("crash", lambda: on_crash())
                 page.on("pageerror", on_pageerror)
@@ -175,6 +197,7 @@ async def run_one(
                     # HANG -> hard timeout
                     logger.debug("Hard timeout exceeded (%ds) for testcase %s — classifying as hang", hard_timeout_s, testcase_id)
                     meta["result"] = "hang"
+                    _attach_js_errors(meta, js_errors)
                     write_json(run_dir / "meta.json", meta)
                     await context.close()
                     elapsed = now_ms() - start
@@ -189,7 +212,7 @@ async def run_one(
                         logger.debug("Crash flag set for testcase %s — classifying as crash", testcase_id)
                         meta["result"] = "crash"
                         meta["detail"] = crashed["msg"]
-                        meta["js_errors"] = js_errors
+                        _attach_js_errors(meta, js_errors)
                         write_json(run_dir / "meta.json", meta)
                         await context.close()
                         elapsed = now_ms() - start
@@ -197,19 +220,21 @@ async def run_one(
                         return RunResult("crash", crashed["msg"], elapsed)
                     if js_errors:
                         logger.debug("JS errors detected for testcase %s — classifying as error", testcase_id)
+                        js_detail = _primary_js_error_detail(js_errors)
                         meta["result"] = "error"
-                        meta["detail"] = js_errors[0]
-                        meta["js_errors"] = js_errors
+                        meta["detail"] = js_detail
+                        _attach_js_errors(meta, js_errors)
                         write_json(run_dir / "meta.json", meta)
                         await context.close()
                         elapsed = now_ms() - start
-                        return RunResult("error", js_errors[0], elapsed)
+                        return RunResult("error", js_detail, elapsed)
 
                     # Heuristic: Playwright "Timeout" indicates nav timeout
                     if "Timeout" in detail or "timeout" in detail.lower():
                         logger.debug("Timeout keyword detected in exception for testcase %s — classifying as timeout", testcase_id)
                         meta["result"] = "timeout"
                         meta["detail"] = detail
+                        _attach_js_errors(meta, js_errors)
                         write_json(run_dir / "meta.json", meta)
                         await context.close()
                         elapsed = now_ms() - start
@@ -219,6 +244,7 @@ async def run_one(
                     logger.debug("Unclassified exception for testcase %s — classifying as error", testcase_id)
                     meta["result"] = "error"
                     meta["detail"] = detail
+                    _attach_js_errors(meta, js_errors)
                     write_json(run_dir / "meta.json", meta)
                     await context.close()
                     elapsed = now_ms() - start
@@ -230,6 +256,7 @@ async def run_one(
                     logger.debug("Post-navigation crash flag set for testcase %s — classifying as crash", testcase_id)
                     meta["result"] = "crash"
                     meta["detail"] = crashed["msg"]
+                    _attach_js_errors(meta, js_errors)
                     write_json(run_dir / "meta.json", meta)
                     await context.close()
                     elapsed = now_ms() - start
