@@ -2,14 +2,14 @@ import asyncio
 import logging
 import socket
 from dataclasses import dataclass
+from functools import partial
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from threading import Thread
-from typing import Optional
 
 from playwright.async_api import async_playwright
 
-from .util import ensure_dir, write_json, safe_rmtree, copytree_if_exists, now_ms
+from .util import ensure_dir, write_json, safe_rmtree, now_ms
 
 logger = logging.getLogger(__name__)
 
@@ -35,25 +35,21 @@ class LocalFileServer:
     def __init__(self, root: Path):
         self.root = root
         self.port = _free_port()
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", self.port), _QuietHandler)
+        # IMPORTANT: instead of chdir, we pin directory to self.root. removes global state
+        handler = partial(_QuietHandler, directory=str(self.root)) # handler factory, directory prefilled to self.root
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", self.port), handler)
         self.thread = Thread(target=self.httpd.serve_forever, daemon=True)
         logger.debug("LocalFileServer initialised: root=%s, port=%d", self.root, self.port)
 
     def __enter__(self):
-        self._old = Path.cwd()
-        # SimpleHTTPRequestHandler serves from cwd
-        import os
-        os.chdir(self.root)
         self.thread.start()
-        logger.debug("LocalFileServer started: serving %s on port %d (cwd changed from %s)", self.root, self.port, self._old)
+        logger.debug("LocalFileServer started: serving %s on port %d", self.root, self.port)
         return self
 
     def __exit__(self, exc_type, exc, tb):
         self.httpd.shutdown()
         self.httpd.server_close()
-        import os
-        os.chdir(self._old)
-        logger.debug("LocalFileServer stopped: port %d released, cwd restored to %s", self.port, self._old)
+        logger.debug("LocalFileServer stopped: port %d released", self.port)
 
 async def run_one(
     *,
