@@ -11,9 +11,20 @@ This file does two things:
 
 import re
 import json
+import platform
+import sys
 from pathlib import Path
 from collections import defaultdict
 
+try:
+    from FTB.ProgramConfiguration import ProgramConfiguration
+    from FTB.Signatures.CrashInfo import CrashInfo
+
+    _FUZZMANAGER_AVAILABLE = True
+except Exception:
+    ProgramConfiguration = None
+    CrashInfo = None
+    _FUZZMANAGER_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Root cause classification
@@ -115,6 +126,117 @@ def _make_group_key(result: dict) -> str:
     return f"{status}:{root_cause}"
 
 
+def _fuzzmanager_platform() -> str:
+    machine = platform.machine().lower()
+    if "arm" in machine or "aarch" in machine:
+        return "arm64"
+    if "64" in machine:
+        return "x86-64"
+    return "x86"
+
+
+def _fuzzmanager_os() -> str:
+    if sys.platform.startswith("darwin"):
+        return "macosx"
+    if sys.platform.startswith("win"):
+        return "windows"
+    return "linux"
+
+
+def _read_failure_meta(results_path: Path, testcase_id: str) -> dict:
+    meta_path = results_path.parent / "findings" / testcase_id / "meta.json"
+    if not meta_path.exists():
+        return {}
+    try:
+        return json.loads(meta_path.read_text())
+    except Exception:
+        return {}
+
+
+def _read_log_tail(path: Path, *, max_bytes: int = 200_000) -> str:
+    if not path.exists() or not path.is_file():
+        return ""
+    try:
+        with path.open("rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            start = max(0, size - max_bytes)
+            f.seek(start)
+            data = f.read()
+    except Exception:
+        return ""
+
+    text = data.decode(errors="ignore").strip()
+    if not text:
+        return ""
+    if start > 0:
+        return "[truncated native log]\n" + text
+    return text
+
+
+def _collect_failure_text(result: dict, meta: dict) -> str:
+    parts: list[str] = []
+
+    detail = result.get("detail")
+    if isinstance(detail, str) and detail.strip():
+        parts.append(detail.strip())
+
+    meta_detail = meta.get("detail")
+    if isinstance(meta_detail, str) and meta_detail.strip():
+        parts.append(meta_detail.strip())
+
+    js_errors = meta.get("js_errors", [])
+    if isinstance(js_errors, list):
+        for entry in js_errors:
+            if isinstance(entry, dict):
+                for key in ("stack", "message", "text"):
+                    val = entry.get(key)
+                    if isinstance(val, str) and val.strip():
+                        parts.append(val.strip())
+            elif isinstance(entry, str) and entry.strip():
+                parts.append(entry.strip())
+
+    native_log_path = meta.get("native_log_path")
+    if isinstance(native_log_path, str) and native_log_path.strip():
+        native_log_file = Path(native_log_path.strip())
+        native_log_text = _read_log_tail(native_log_file)
+        if not native_log_text:
+            fallback = native_log_file.parent / "user-data-dir" / "Default" / "chrome_debug.log"
+            native_log_text = _read_log_tail(fallback)
+        if native_log_text:
+            parts.append(native_log_text)
+
+    return "\n".join(parts)
+
+
+def _fuzzmanager_signature_from_text(text: str) -> str | None:
+    if not _FUZZMANAGER_AVAILABLE or not text.strip():
+        return None
+
+    try:
+        cfg = ProgramConfiguration("fuzion", _fuzzmanager_platform(), _fuzzmanager_os())
+        crash_info = CrashInfo.fromRawCrashData("", text, cfg)
+        short_sig = crash_info.createShortSignature()
+        if short_sig and short_sig != "No crash detected":
+            return short_sig
+    except Exception:
+        return None
+
+    return None
+
+
+def _resolve_root_cause(result: dict, results_path: Path) -> tuple[str, str]:
+    testcase_id = result.get("testcase_id", "")
+    meta = _read_failure_meta(results_path, testcase_id)
+    fm_text = _collect_failure_text(result, meta)
+    fm_signature = _fuzzmanager_signature_from_text(fm_text)
+    if fm_signature:
+        return f"fuzzmanager:{fm_signature}", "fuzzmanager"
+
+    html_path = Path(result.get("testcase", ""))
+    return classify_html(html_path), "heuristic"
+
+
 # read results.json, classify each failing HTML file, and group by root cause.
 # returns a dict where each key is a unique bug type (status:root_cause)
 # and the value is a list of testcases that triggered it.
@@ -124,10 +246,11 @@ def deduplicate(results_path: Path) -> dict:
 
     failures = [r for r in results if r["status"] != "ok"]
 
-    # classify each failure by reading its HTML file
+    # classify each failure using FuzzManager signature if available, else HTML heuristics
     for f in failures:
-        html_path = Path(f.get("testcase", ""))
-        f["root_cause"] = classify_html(html_path)
+        root_cause, source = _resolve_root_cause(f, results_path)
+        f["root_cause"] = root_cause
+        f["root_cause_source"] = source
 
     # group failures that have the same status + root cause
     groups = defaultdict(list)
