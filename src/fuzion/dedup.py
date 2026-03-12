@@ -69,13 +69,6 @@ def classify_html(html_path: Path) -> str:
         if re.search(r"innerHTML\s*=\s*['\"]", content):
             return "use_after_free"
 
-    # large/complex pages (1000+ lines of CSS/HTML) that overwhelm the renderer
-    # these are typically Domato-generated files with massive style blocks
-    num_lines = content.count("\n")
-    num_css_props = len(re.findall(r"[\w-]+\s*:\s*[^;]+;", content))
-    if num_lines > 500 and num_css_props > 200:
-        return "complex_page"
-
     # no known pattern matched
     return "unknown"
 
