@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import socket
+import shutil
 from dataclasses import dataclass
 from functools import partial
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
@@ -45,6 +46,36 @@ def _primary_js_error_detail(js_errors: list[dict[str, str]]) -> str:
 def _attach_js_errors(meta: dict, js_errors: list[dict[str, str]]) -> None:
     if js_errors:
         meta["js_errors"] = js_errors
+
+
+def _attach_native_log_meta(meta: dict, native_log_path: Path) -> None:
+    meta["native_log_path"] = str(native_log_path)
+    meta["native_log_exists"] = native_log_path.exists()
+
+
+def _materialize_native_log(*, preferred_path: Path, user_data_dir: Path) -> Path:
+    """
+    Chromium may ignore --log-file and still write to a profile-local chrome_debug.log.
+    Normalize this by copying the discovered file to preferred_path when needed.
+    """
+    candidates = [
+        preferred_path,
+        user_data_dir / "Default" / "chrome_debug.log",
+        user_data_dir / "chrome_debug.log",
+    ]
+    discovered = next((p for p in candidates if p.exists() and p.is_file()), None)
+    if discovered is None:
+        return preferred_path
+
+    if discovered != preferred_path:
+        try:
+            shutil.copyfile(discovered, preferred_path)
+            return preferred_path
+        except Exception:
+            return discovered
+
+    return preferred_path
+
 
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -101,6 +132,8 @@ async def run_one(
     user_data_dir = run_dir / "user-data-dir"
     ensure_dir(user_data_dir)
     logger.debug("User data dir prepared: %s", user_data_dir)
+    native_log_path = run_dir / "chrome.log"
+    logger.debug("Native chromium log path: %s", native_log_path)
 
     meta = {
         "testcase": str(html_path),
@@ -124,6 +157,9 @@ async def run_one(
                     headless=True,
                     args=[
                         "--no-first-run",
+                        "--enable-logging",
+                        "--v=1",
+                        f"--log-file={native_log_path.resolve()}",
                         "--disable-background-networking",
                         "--disable-default-apps",
                         "--disable-extensions",
@@ -198,8 +234,13 @@ async def run_one(
                     logger.debug("Hard timeout exceeded (%ds) for testcase %s — classifying as hang", hard_timeout_s, testcase_id)
                     meta["result"] = "hang"
                     _attach_js_errors(meta, js_errors)
-                    write_json(run_dir / "meta.json", meta)
                     await context.close()
+                    native_log_path = _materialize_native_log(
+                        preferred_path=native_log_path,
+                        user_data_dir=user_data_dir,
+                    )
+                    _attach_native_log_meta(meta, native_log_path)
+                    write_json(run_dir / "meta.json", meta)
                     elapsed = now_ms() - start
                     logger.debug("run_one returning: status=hang, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
                     return RunResult("hang", f"hard timeout > {hard_timeout_s}s", elapsed)
@@ -213,8 +254,13 @@ async def run_one(
                         meta["result"] = "crash"
                         meta["detail"] = crashed["msg"]
                         _attach_js_errors(meta, js_errors)
-                        write_json(run_dir / "meta.json", meta)
                         await context.close()
+                        native_log_path = _materialize_native_log(
+                            preferred_path=native_log_path,
+                            user_data_dir=user_data_dir,
+                        )
+                        _attach_native_log_meta(meta, native_log_path)
+                        write_json(run_dir / "meta.json", meta)
                         elapsed = now_ms() - start
                         logger.debug("run_one returning: status=crash, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
                         return RunResult("crash", crashed["msg"], elapsed)
@@ -224,8 +270,13 @@ async def run_one(
                         meta["result"] = "error"
                         meta["detail"] = js_detail
                         _attach_js_errors(meta, js_errors)
-                        write_json(run_dir / "meta.json", meta)
                         await context.close()
+                        native_log_path = _materialize_native_log(
+                            preferred_path=native_log_path,
+                            user_data_dir=user_data_dir,
+                        )
+                        _attach_native_log_meta(meta, native_log_path)
+                        write_json(run_dir / "meta.json", meta)
                         elapsed = now_ms() - start
                         return RunResult("error", js_detail, elapsed)
 
@@ -235,8 +286,13 @@ async def run_one(
                         meta["result"] = "timeout"
                         meta["detail"] = detail
                         _attach_js_errors(meta, js_errors)
-                        write_json(run_dir / "meta.json", meta)
                         await context.close()
+                        native_log_path = _materialize_native_log(
+                            preferred_path=native_log_path,
+                            user_data_dir=user_data_dir,
+                        )
+                        _attach_native_log_meta(meta, native_log_path)
+                        write_json(run_dir / "meta.json", meta)
                         elapsed = now_ms() - start
                         logger.debug("run_one returning: status=timeout, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
                         return RunResult("timeout", detail, elapsed)
@@ -245,8 +301,13 @@ async def run_one(
                     meta["result"] = "error"
                     meta["detail"] = detail
                     _attach_js_errors(meta, js_errors)
-                    write_json(run_dir / "meta.json", meta)
                     await context.close()
+                    native_log_path = _materialize_native_log(
+                        preferred_path=native_log_path,
+                        user_data_dir=user_data_dir,
+                    )
+                    _attach_native_log_meta(meta, native_log_path)
+                    write_json(run_dir / "meta.json", meta)
                     elapsed = now_ms() - start
                     logger.debug("run_one returning: status=error, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
                     return RunResult("error", detail, elapsed)
@@ -257,8 +318,13 @@ async def run_one(
                     meta["result"] = "crash"
                     meta["detail"] = crashed["msg"]
                     _attach_js_errors(meta, js_errors)
-                    write_json(run_dir / "meta.json", meta)
                     await context.close()
+                    native_log_path = _materialize_native_log(
+                        preferred_path=native_log_path,
+                        user_data_dir=user_data_dir,
+                    )
+                    _attach_native_log_meta(meta, native_log_path)
+                    write_json(run_dir / "meta.json", meta)
                     elapsed = now_ms() - start
                     logger.debug("run_one returning: status=crash, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
                     return RunResult("crash", crashed["msg"], elapsed)
@@ -275,6 +341,11 @@ async def run_one(
         logger.debug("Outer exception for testcase %s: %s — classifying as error", testcase_id, repr(e))
         meta["result"] = "error"
         meta["detail"] = repr(e)
+        native_log_path = _materialize_native_log(
+            preferred_path=native_log_path,
+            user_data_dir=user_data_dir,
+        )
+        _attach_native_log_meta(meta, native_log_path)
         write_json(run_dir / "meta.json", meta)
         elapsed = now_ms() - start
         logger.debug("run_one returning: status=error, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)

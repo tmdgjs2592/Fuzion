@@ -66,8 +66,14 @@ class FakeContext:
 class FakeChromium:
     def __init__(self, ctx):
         self._ctx = ctx
+        self.last_user_data_dir = None
+        self.last_headless = None
+        self.last_args = None
 
     async def launch_persistent_context(self, user_data_dir, headless, args):
+        self.last_user_data_dir = user_data_dir
+        self.last_headless = headless
+        self.last_args = list(args)
         return self._ctx
 
 
@@ -117,10 +123,28 @@ def _read_meta(run_dir):
     return json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
 
 
+def test_materialize_native_log_prefers_profile_chrome_debug(tmp_path):
+    import fuzion.run as runner
+
+    case_dir = tmp_path / "case_000009"
+    default_dir = case_dir / "user-data-dir" / "Default"
+    default_dir.mkdir(parents=True)
+    fallback = default_dir / "chrome_debug.log"
+    fallback.write_text("native stderr line", encoding="utf-8")
+    preferred = case_dir / "chrome.log"
+
+    out = runner._materialize_native_log(preferred_path=preferred, user_data_dir=case_dir / "user-data-dir")
+
+    assert out == preferred
+    assert preferred.exists()
+    assert preferred.read_text(encoding="utf-8") == "native stderr line"
+
+
 def _patch(monkeypatch, runner, page):
     p = FakePlaywright(FakeChromium(FakeContext(page)))
     monkeypatch.setattr(runner, "LocalFileServer", FakeLocalFileServer)
     monkeypatch.setattr(runner, "async_playwright", lambda: FakeAsyncPlaywrightCM(p))
+    return p
 
 
 @pytest.mark.asyncio
@@ -128,12 +152,17 @@ async def test_ok_returns_run_result(tmp_path, monkeypatch):
     import fuzion.run as runner
     html = tmp_path / "case_000001.html"
     _write_html(html)
-    _patch(monkeypatch, runner, FakePage())
+    patched = _patch(monkeypatch, runner, FakePage())
 
     res = await runner.run_one(html_path=html, findings_dir=tmp_path / "findings", nav_timeout_s=1, hard_timeout_s=1)
 
     assert res.status == "ok"
     assert res.elapsed_ms >= 0
+    assert "--enable-logging" in patched.chromium.last_args
+    assert "--enable-logging=stderr" not in patched.chromium.last_args
+    assert "--v=1" in patched.chromium.last_args
+    log_arg = next(arg for arg in patched.chromium.last_args if arg.startswith("--log-file="))
+    assert log_arg.endswith("/case_000001/chrome.log")
 
 
 @pytest.mark.asyncio
@@ -274,7 +303,10 @@ async def test_timeout_preserves_evidence(tmp_path, monkeypatch):
     run_dir = findings_dir / html.stem
     assert run_dir.exists()
     assert (run_dir / "input.html").exists()
-    assert _read_meta(run_dir)["result"] == "timeout"
+    meta = _read_meta(run_dir)
+    assert meta["result"] == "timeout"
+    assert meta["native_log_exists"] is False
+    assert meta["native_log_path"].endswith("/case_000005/chrome.log")
 
 
 @pytest.mark.asyncio
