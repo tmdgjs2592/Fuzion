@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,10 +25,11 @@ async def run_corpus(
     findings_dir: Path,
     nav_timeout_s: int,
     hard_timeout_s: int,
+    max_concurrency: int = 1,
 ) -> Tuple[RunSummary, List[tuple[Path, RunResult]]]:
     logger.debug(
-        "run_corpus called: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%d, hard_timeout_s=%d",
-        corpus_dir, findings_dir, nav_timeout_s, hard_timeout_s,
+        "run_corpus called: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%d, hard_timeout_s=%d, max_concurrency=%d",
+        corpus_dir, findings_dir, nav_timeout_s, hard_timeout_s, max_concurrency,
     )
     ensure_dir(corpus_dir)
     ensure_dir(findings_dir)
@@ -37,6 +39,15 @@ async def run_corpus(
 
     html_files = sorted(corpus_dir.glob("*.html"))
     logger.debug("Found %d .html file(s) in corpus_dir %s", len(html_files), corpus_dir)
+
+
+    # ensure concurrency for all vals of file size
+    concurrency = max(1, max_concurrency)
+    if len(html_files):
+        concurrency = min(len(html_files), concurrency)
+
+
+    logger.debug("Using concurrency=%d", concurrency)
 
     with Progress(
         SpinnerColumn(),
@@ -49,19 +60,41 @@ async def run_corpus(
     ) as progress:
         task = progress.add_task("Running", total=len(html_files), ok=0, crashes=0, timeouts=0, errors=0)
 
-        for html in html_files:
-            logger.debug("Running testcase: %s", html.name)
-            res = await run_one(
-                html_path=html,
-                findings_dir=findings_dir,
-                nav_timeout_s=nav_timeout_s,
-                hard_timeout_s=hard_timeout_s,
-            )
-            logger.debug("Testcase %s result: status=%s, elapsed_ms=%s, detail=%s", html.name, res.status, res.elapsed_ms, res.detail)
-            results.append((html, res))
-            setattr(summary, res.status, getattr(summary, res.status) + 1)
-            progress.update(task, advance=1, ok=summary.ok, crashes=summary.crash, timeouts=summary.timeout, errors=summary.error)
-            logger.debug("Running summary: ok=%d, crash=%d, hang=%d, timeout=%d, error=%d", summary.ok, summary.crash, summary.hang, summary.timeout, summary.error)
+        sem = asyncio.Semaphore(concurrency)
+
+       
+
+
+
+        async def _run_with_limit(html: Path) -> tuple[Path, RunResult]:
+            async with sem: # if sem isn't busy, run testcase
+                logger.debug("Running testcase: %s", html.name)
+                res = await run_one(
+                    html_path=html,
+                    findings_dir=findings_dir,
+                    nav_timeout_s=nav_timeout_s,
+                    hard_timeout_s=hard_timeout_s,
+                )
+                return html, res
+
+        tasks = [asyncio.create_task(_run_with_limit(html)) for html in html_files]
+        try:
+            for done in asyncio.as_completed(tasks):
+                html, res = await done
+                logger.debug("Testcase %s result: status=%s, elapsed_ms=%s, detail=%s", html.name, res.status, res.elapsed_ms, res.detail)
+                results.append((html, res))
+                setattr(summary, res.status, getattr(summary, res.status) + 1)
+                progress.update(task, advance=1, ok=summary.ok, crashes=summary.crash, timeouts=summary.timeout, errors=summary.error)
+                logger.debug("Running summary: ok=%d, crash=%d, hang=%d, timeout=%d, error=%d", summary.ok, summary.crash, summary.hang, summary.timeout, summary.error)
+        except Exception as e:
+            for t in tasks:
+                logger.debug("error:",str(e))
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+
+    # sort results (optional but makes it appear sequential)
+    results.sort(key=lambda item: item[0].name)
 
     logger.debug("run_corpus complete: %d result(s), final summary: ok=%d, crash=%d, hang=%d, timeout=%d, error=%d", len(results), summary.ok, summary.crash, summary.hang, summary.timeout, summary.error)
     return summary, results

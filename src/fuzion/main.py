@@ -25,6 +25,7 @@ def _reset_dir(p: Path) -> None:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    parser.add_argument("--jobs", type=int, default=None, help="Number of threads")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -36,6 +37,10 @@ def main():
     logger.debug("Project root resolved to: %s", root)
     cfg = default_config(root)
     logger.debug("Loaded default config: %s", cfg)
+
+    # jobs
+    jobs = max(1, args.jobs) if args.jobs is not None else cfg.max_concurrency
+    logger.debug("threads set to jobs=%d", jobs)
 
     choice = prompt_user(cfg)
     logger.debug("User selected choice: %d", choice)
@@ -57,8 +62,8 @@ def main():
 
         console.print(f"[bold]Running[/bold] headless Chromium over corpus in: {cfg.corpus_dir}")
         logger.debug(
-            "Starting run_corpus: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%s, hard_timeout_s=%s",
-            cfg.corpus_dir, cfg.findings_dir, cfg.nav_timeout_s, cfg.hard_timeout_s,
+            "Starting run_corpus: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%s, hard_timeout_s=%s, jobs=%d",
+            cfg.corpus_dir, cfg.findings_dir, cfg.nav_timeout_s, cfg.hard_timeout_s, jobs,
         )
         summary, results = asyncio.run(
             run_corpus(
@@ -66,6 +71,7 @@ def main():
                 findings_dir=cfg.findings_dir,
                 nav_timeout_s=cfg.nav_timeout_s,
                 hard_timeout_s=cfg.hard_timeout_s,
+                max_concurrency=jobs,
             )
         )
         logger.debug("run_corpus complete: summary=%s, result count=%d", summary, len(results))
@@ -87,8 +93,8 @@ def main():
 
         console.print(f"[bold]Running[/bold] headless Chromium over corpus in: {cfg.corpus_dir}")
         logger.debug(
-            "Starting run_corpus: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%s, hard_timeout_s=%s",
-            cfg.corpus_dir, cfg.findings_dir, cfg.nav_timeout_s, cfg.hard_timeout_s,
+            "Starting run_corpus: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%s, hard_timeout_s=%s, jobs=%d",
+            cfg.corpus_dir, cfg.findings_dir, cfg.nav_timeout_s, cfg.hard_timeout_s, jobs,
         )
         summary, results = asyncio.run(
             run_corpus(
@@ -96,6 +102,7 @@ def main():
                 findings_dir=cfg.findings_dir,
                 nav_timeout_s=cfg.nav_timeout_s,
                 hard_timeout_s=cfg.hard_timeout_s,
+                max_concurrency=jobs,
             )
         )
         logger.debug("run_corpus complete: summary=%s, result count=%d", summary, len(results))
