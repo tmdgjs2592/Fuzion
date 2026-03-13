@@ -53,6 +53,13 @@ def _attach_native_log_meta(meta: dict, native_log_path: Path) -> None:
     meta["native_log_exists"] = native_log_path.exists()
 
 
+def _attach_dump_meta(meta: dict, dumps_dir: Path) -> None:
+    dump_files = sorted(str(p) for p in dumps_dir.rglob("*.dmp") if p.is_file())
+    meta["dump_dir"] = str(dumps_dir)
+    meta["dump_files"] = dump_files
+    meta["dump_count"] = len(dump_files)
+
+
 def _materialize_native_log(*, preferred_path: Path, user_data_dir: Path) -> Path:
     """
     Chromium may ignore --log-file and still write to a profile-local chrome_debug.log.
@@ -75,6 +82,21 @@ def _materialize_native_log(*, preferred_path: Path, user_data_dir: Path) -> Pat
             return discovered
 
     return preferred_path
+
+
+def _finalize_failure_artifacts(
+    *,
+    meta: dict,
+    native_log_path: Path,
+    user_data_dir: Path,
+    dumps_dir: Path,
+) -> None:
+    native_log_path = _materialize_native_log(
+        preferred_path=native_log_path,
+        user_data_dir=user_data_dir,
+    )
+    _attach_native_log_meta(meta, native_log_path)
+    _attach_dump_meta(meta, dumps_dir)
 
 
 def _free_port() -> int:
@@ -134,6 +156,9 @@ async def run_one(
     logger.debug("User data dir prepared: %s", user_data_dir)
     native_log_path = run_dir / "chrome.log"
     logger.debug("Native chromium log path: %s", native_log_path)
+    dumps_dir = run_dir / "dumps"
+    ensure_dir(dumps_dir)
+    logger.debug("Native crash dump dir prepared: %s", dumps_dir)
 
     meta = {
         "testcase": str(html_path),
@@ -160,6 +185,8 @@ async def run_one(
                         "--enable-logging",
                         "--v=1",
                         f"--log-file={native_log_path.resolve()}",
+                        "--enable-crash-reporter",
+                        f"--crash-dumps-dir={dumps_dir.resolve()}",
                         "--disable-background-networking",
                         "--disable-default-apps",
                         "--disable-extensions",
@@ -235,11 +262,12 @@ async def run_one(
                     meta["result"] = "hang"
                     _attach_js_errors(meta, js_errors)
                     await context.close()
-                    native_log_path = _materialize_native_log(
-                        preferred_path=native_log_path,
+                    _finalize_failure_artifacts(
+                        meta=meta,
+                        native_log_path=native_log_path,
                         user_data_dir=user_data_dir,
+                        dumps_dir=dumps_dir,
                     )
-                    _attach_native_log_meta(meta, native_log_path)
                     write_json(run_dir / "meta.json", meta)
                     elapsed = now_ms() - start
                     logger.debug("run_one returning: status=hang, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
@@ -255,11 +283,12 @@ async def run_one(
                         meta["detail"] = crashed["msg"]
                         _attach_js_errors(meta, js_errors)
                         await context.close()
-                        native_log_path = _materialize_native_log(
-                            preferred_path=native_log_path,
+                        _finalize_failure_artifacts(
+                            meta=meta,
+                            native_log_path=native_log_path,
                             user_data_dir=user_data_dir,
+                            dumps_dir=dumps_dir,
                         )
-                        _attach_native_log_meta(meta, native_log_path)
                         write_json(run_dir / "meta.json", meta)
                         elapsed = now_ms() - start
                         logger.debug("run_one returning: status=crash, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
@@ -271,11 +300,12 @@ async def run_one(
                         meta["detail"] = js_detail
                         _attach_js_errors(meta, js_errors)
                         await context.close()
-                        native_log_path = _materialize_native_log(
-                            preferred_path=native_log_path,
+                        _finalize_failure_artifacts(
+                            meta=meta,
+                            native_log_path=native_log_path,
                             user_data_dir=user_data_dir,
+                            dumps_dir=dumps_dir,
                         )
-                        _attach_native_log_meta(meta, native_log_path)
                         write_json(run_dir / "meta.json", meta)
                         elapsed = now_ms() - start
                         return RunResult("error", js_detail, elapsed)
@@ -287,11 +317,12 @@ async def run_one(
                         meta["detail"] = detail
                         _attach_js_errors(meta, js_errors)
                         await context.close()
-                        native_log_path = _materialize_native_log(
-                            preferred_path=native_log_path,
+                        _finalize_failure_artifacts(
+                            meta=meta,
+                            native_log_path=native_log_path,
                             user_data_dir=user_data_dir,
+                            dumps_dir=dumps_dir,
                         )
-                        _attach_native_log_meta(meta, native_log_path)
                         write_json(run_dir / "meta.json", meta)
                         elapsed = now_ms() - start
                         logger.debug("run_one returning: status=timeout, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
@@ -302,11 +333,12 @@ async def run_one(
                     meta["detail"] = detail
                     _attach_js_errors(meta, js_errors)
                     await context.close()
-                    native_log_path = _materialize_native_log(
-                        preferred_path=native_log_path,
+                    _finalize_failure_artifacts(
+                        meta=meta,
+                        native_log_path=native_log_path,
                         user_data_dir=user_data_dir,
+                        dumps_dir=dumps_dir,
                     )
-                    _attach_native_log_meta(meta, native_log_path)
                     write_json(run_dir / "meta.json", meta)
                     elapsed = now_ms() - start
                     logger.debug("run_one returning: status=error, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
@@ -319,11 +351,12 @@ async def run_one(
                     meta["detail"] = crashed["msg"]
                     _attach_js_errors(meta, js_errors)
                     await context.close()
-                    native_log_path = _materialize_native_log(
-                        preferred_path=native_log_path,
+                    _finalize_failure_artifacts(
+                        meta=meta,
+                        native_log_path=native_log_path,
                         user_data_dir=user_data_dir,
+                        dumps_dir=dumps_dir,
                     )
-                    _attach_native_log_meta(meta, native_log_path)
                     write_json(run_dir / "meta.json", meta)
                     elapsed = now_ms() - start
                     logger.debug("run_one returning: status=crash, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
@@ -341,11 +374,12 @@ async def run_one(
         logger.debug("Outer exception for testcase %s: %s — classifying as error", testcase_id, repr(e))
         meta["result"] = "error"
         meta["detail"] = repr(e)
-        native_log_path = _materialize_native_log(
-            preferred_path=native_log_path,
+        _finalize_failure_artifacts(
+            meta=meta,
+            native_log_path=native_log_path,
             user_data_dir=user_data_dir,
+            dumps_dir=dumps_dir,
         )
-        _attach_native_log_meta(meta, native_log_path)
         write_json(run_dir / "meta.json", meta)
         elapsed = now_ms() - start
         logger.debug("run_one returning: status=error, elapsed_ms=%d, testcase=%s", elapsed, testcase_id)
