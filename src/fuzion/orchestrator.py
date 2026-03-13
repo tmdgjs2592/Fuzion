@@ -26,10 +26,13 @@ async def run_corpus(
     nav_timeout_s: int,
     hard_timeout_s: int,
     max_concurrency: int = 1,
+    headed: bool = False,
+    browser_channel: str | None = None,
+    browser_executable_path: Path | None = None,
 ) -> Tuple[RunSummary, List[tuple[Path, RunResult]]]:
     logger.debug(
-        "run_corpus called: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%d, hard_timeout_s=%d, max_concurrency=%d",
-        corpus_dir, findings_dir, nav_timeout_s, hard_timeout_s, max_concurrency,
+        "run_corpus called: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%d, hard_timeout_s=%d, max_concurrency=%d, headed=%s, browser_channel=%s, browser_executable_path=%s",
+        corpus_dir, findings_dir, nav_timeout_s, hard_timeout_s, max_concurrency, headed, browser_channel, browser_executable_path,
     )
     ensure_dir(corpus_dir)
     ensure_dir(findings_dir)
@@ -74,6 +77,9 @@ async def run_corpus(
                     findings_dir=findings_dir,
                     nav_timeout_s=nav_timeout_s,
                     hard_timeout_s=hard_timeout_s,
+                    headed=headed,
+                    browser_channel=browser_channel,
+                    browser_executable_path=browser_executable_path,
                 )
                 return html, res
 
@@ -105,10 +111,13 @@ async def run_custom(
     findings_dir: Path,
     nav_timeout_s: int,
     hard_timeout_s: int,
+    headed: bool = False,
+    browser_channel: str | None = None,
+    browser_executable_path: Path | None = None,
 ) -> Tuple[RunSummary, List[tuple[Path, RunResult]]]:
     logger.debug(
-        "run_custom called: html_dir=%s, findings_dir=%s, nav_timeout_s=%d, hard_timeout_s=%d",
-        html_dir, findings_dir, nav_timeout_s, hard_timeout_s,
+        "run_custom called: html_dir=%s, findings_dir=%s, nav_timeout_s=%d, hard_timeout_s=%d, headed=%s, browser_channel=%s, browser_executable_path=%s",
+        html_dir, findings_dir, nav_timeout_s, hard_timeout_s, headed, browser_channel, browser_executable_path,
     )
     ensure_dir(findings_dir)
 
@@ -121,6 +130,9 @@ async def run_custom(
                 findings_dir=findings_dir,
                 nav_timeout_s=nav_timeout_s,
                 hard_timeout_s=hard_timeout_s,
+                headed=headed,
+                browser_channel=browser_channel,
+                browser_executable_path=browser_executable_path,
             )
     logger.debug("Testcase %s result: status=%s, elapsed_ms=%s, detail=%s", html_dir.name, res.status, res.elapsed_ms, res.detail)
     results.append((html_dir, res))

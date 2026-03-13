@@ -42,7 +42,31 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
     parser.add_argument("--jobs", type=int, default=None, help="Number of threads")
+    parser.add_argument(
+        "--headed",
+        action="store_true",
+        help="Run with a visible browser window instead of headless mode",
+    )
+    parser.add_argument(
+        "--browser-channel",
+        type=str,
+        default=None,
+        help="Playwright browser channel (example: chrome, msedge)",
+    )
+    parser.add_argument(
+        "--browser-executable",
+        type=Path,
+        default=None,
+        help="Path to a browser executable to launch",
+    )
     args = parser.parse_args()
+
+    if args.browser_channel and args.browser_executable is not None:
+        parser.error("Use either --browser-channel or --browser-executable, not both.")
+    if args.browser_executable is not None:
+        args.browser_executable = args.browser_executable.expanduser().resolve()
+        if not args.browser_executable.exists():
+            parser.error(f"--browser-executable not found: {args.browser_executable}")
 
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.WARNING,
@@ -58,6 +82,15 @@ def main():
     # jobs
     jobs = max(1, args.jobs) if args.jobs is not None else cfg.max_concurrency
     logger.debug("threads set to jobs=%d", jobs)
+    if args.headed and jobs > 1:
+        console.print("[yellow]Warning:[/yellow] headed mode with multiple jobs opens multiple browser windows.")
+
+    run_mode = "headed" if args.headed else "headless"
+    browser_target = "Chromium"
+    if args.browser_channel:
+        browser_target = f"browser channel '{args.browser_channel}'"
+    elif args.browser_executable is not None:
+        browser_target = f"browser executable {args.browser_executable}"
 
     choice = prompt_user(cfg)
     logger.debug("User selected choice: %d", choice)
@@ -77,10 +110,10 @@ def main():
         gen.generate(corpus_dir=cfg.corpus_dir, n=n)
         logger.debug("DomatoGenerator.generate complete")
 
-        console.print(f"[bold]Running[/bold] headless Chromium over corpus in: {cfg.corpus_dir}")
+        console.print(f"[bold]Running[/bold] {run_mode} {browser_target} over corpus in: {cfg.corpus_dir}")
         logger.debug(
-            "Starting run_corpus: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%s, hard_timeout_s=%s, jobs=%d",
-            cfg.corpus_dir, cfg.findings_dir, cfg.nav_timeout_s, cfg.hard_timeout_s, jobs,
+            "Starting run_corpus: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%s, hard_timeout_s=%s, jobs=%d, headed=%s, browser_channel=%s, browser_executable=%s",
+            cfg.corpus_dir, cfg.findings_dir, cfg.nav_timeout_s, cfg.hard_timeout_s, jobs, args.headed, args.browser_channel, args.browser_executable,
         )
         summary, results = asyncio.run(
             run_corpus(
@@ -89,6 +122,9 @@ def main():
                 nav_timeout_s=cfg.nav_timeout_s,
                 hard_timeout_s=cfg.hard_timeout_s,
                 max_concurrency=jobs,
+                headed=args.headed,
+                browser_channel=args.browser_channel,
+                browser_executable_path=args.browser_executable,
             )
         )
         logger.debug("run_corpus complete: summary=%s, result count=%d", summary, len(results))
@@ -108,10 +144,10 @@ def main():
         gen.generate(corpus_dir=cfg.corpus_dir, n=n)
         logger.debug("CustomGenerator.generate complete")
 
-        console.print(f"[bold]Running[/bold] headless Chromium over corpus in: {cfg.corpus_dir}")
+        console.print(f"[bold]Running[/bold] {run_mode} {browser_target} over corpus in: {cfg.corpus_dir}")
         logger.debug(
-            "Starting run_corpus: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%s, hard_timeout_s=%s, jobs=%d",
-            cfg.corpus_dir, cfg.findings_dir, cfg.nav_timeout_s, cfg.hard_timeout_s, jobs,
+            "Starting run_corpus: corpus_dir=%s, findings_dir=%s, nav_timeout_s=%s, hard_timeout_s=%s, jobs=%d, headed=%s, browser_channel=%s, browser_executable=%s",
+            cfg.corpus_dir, cfg.findings_dir, cfg.nav_timeout_s, cfg.hard_timeout_s, jobs, args.headed, args.browser_channel, args.browser_executable,
         )
         summary, results = asyncio.run(
             run_corpus(
@@ -120,18 +156,24 @@ def main():
                 nav_timeout_s=cfg.nav_timeout_s,
                 hard_timeout_s=cfg.hard_timeout_s,
                 max_concurrency=jobs,
+                headed=args.headed,
+                browser_channel=args.browser_channel,
+                browser_executable_path=args.browser_executable,
             )
         )
         logger.debug("run_corpus complete: summary=%s, result count=%d", summary, len(results))
     elif (choice == 3):
         html = manual_prompt_user(cfg.custom_dir)
-        console.print(f"[bold]Running[/bold] headless Chromium over a file: {html}")
+        console.print(f"[bold]Running[/bold] {run_mode} {browser_target} over a file: {html}")
         summary, results = asyncio.run(
             run_custom(
                 html_dir=cfg.custom_dir/html,
                 findings_dir=cfg.findings_dir,
                 nav_timeout_s=cfg.nav_timeout_s,
                 hard_timeout_s=cfg.hard_timeout_s,
+                headed=args.headed,
+                browser_channel=args.browser_channel,
+                browser_executable_path=args.browser_executable,
             )
         )
     logger.debug("Assembling results list from %d entries", len(results))

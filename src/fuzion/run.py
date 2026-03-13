@@ -132,6 +132,9 @@ async def run_one(
     findings_dir: Path,
     nav_timeout_s: int,
     hard_timeout_s: int,
+    headed: bool = False,
+    browser_channel: str | None = None,
+    browser_executable_path: Path | None = None,
 ) -> RunResult:
     start = now_ms()
     logger.debug(
@@ -174,13 +177,13 @@ async def run_one(
             logger.debug("Serving testcase at URL: %s", url)
 
             async with async_playwright() as p:
-                # Launch Chromium headless.
-                # Chrome's headless mode is documented by Chromium team. :contentReference[oaicite:7]{index=7}
+                # Launch Chromium (headless by default unless headed=True).
                 logger.debug("Launching Chromium persistent context: user_data_dir=%s", user_data_dir)
-                context = await p.chromium.launch_persistent_context(
-                    user_data_dir,
-                    headless=True,
-                    args=[
+                launch_kwargs: dict[str, Any] = {
+                    "user_data_dir": user_data_dir,
+                    "headless": not headed,
+                    "ignore_default_args": ["--disable-breakpad"],
+                    "args": [
                         "--no-first-run",
                         "--enable-logging",
                         "--v=1",
@@ -197,9 +200,15 @@ async def run_one(
                         "--disable-popup-blocking",
                         "--disable-client-side-phishing-detection",
                         "--disable-features=Translate,BackForwardCache",
-                        "--mute-audio"
+                        "--mute-audio",
                     ],
-                )
+                }
+                if browser_channel:
+                    launch_kwargs["channel"] = browser_channel
+                if browser_executable_path is not None:
+                    launch_kwargs["executable_path"] = str(browser_executable_path)
+
+                context = await p.chromium.launch_persistent_context(**launch_kwargs)
                 logger.debug("Chromium context launched successfully")
                 page = await context.new_page()
                 logger.debug("New page opened")
