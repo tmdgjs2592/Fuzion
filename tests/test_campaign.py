@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from fuzion.campaign import CampaignConfig, _select_parents, materialize_seed_cases, run_campaign
+from fuzion.campaign import CampaignConfig, _select_parents, _splice_donor, materialize_seed_cases, run_campaign
 
 
 def test_materialize_manual_seed_cases(tmp_path: Path) -> None:
@@ -156,6 +156,65 @@ def test_run_campaign_forwards_runner_options(tmp_path: Path, monkeypatch) -> No
     assert seen["kwargs"]["browser_channel"] == "chrome"
     assert seen["kwargs"]["browser_executable_path"] is None
     assert seen["kwargs"]["max_concurrency"] == 3
+
+
+def test_run_campaign_records_splice_parent_for_splice_mutation(tmp_path: Path, monkeypatch) -> None:
+    project_root = tmp_path / "project"
+    manual_dir = project_root / "manual"
+    manual_dir.mkdir(parents=True)
+    (manual_dir / "a.html").write_text(
+        "<html><head><script>while(true){}</script></head><body><div>one</div></body></html>",
+        encoding="utf-8",
+    )
+    (manual_dir / "b.html").write_text(
+        "<html><head><script>new ArrayBuffer(1000000);</script></head><body><div>two</div></body></html>",
+        encoding="utf-8",
+    )
+
+    async def fake_run_corpus(**kwargs):
+        results = []
+        for html_path in sorted(kwargs["corpus_dir"].glob("*.html")):
+            results.append((html_path, SimpleNamespace(status="error", detail="boom", elapsed_ms=7)))
+        return SimpleNamespace(ok=0, error=len(results)), results
+
+    def fake_mutate_file(source_path, output_path, **kwargs):
+        output_path.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+        return "splice_js_section"
+
+    monkeypatch.setattr("fuzion.campaign._run_corpus", fake_run_corpus)
+    monkeypatch.setattr("fuzion.campaign.mutate_file", fake_mutate_file)
+
+    run_campaign(
+        CampaignConfig(
+            project_root=project_root,
+            out_dir=tmp_path / "out",
+            campaign_name="splice",
+            seed_source="manual",
+            seed_count=2,
+            generations=2,
+            mutations_per_case=1,
+            retain_per_bucket=1,
+        )
+    )
+
+    gen1 = json.loads((tmp_path / "out" / "campaigns" / "splice" / "gen_0001" / "cases.json").read_text(encoding="utf-8"))
+    ids = {case["parent_id"]: case["splice_parent_id"] for case in gen1["cases"]}
+
+    assert ids["gen_0000_case_000001"] == "gen_0000_case_000002"
+    assert ids["gen_0000_case_000002"] == "gen_0000_case_000001"
+
+
+def test_splice_donor_rotates_across_other_parents() -> None:
+    parents = [
+        SimpleNamespace(case_id="a"),
+        SimpleNamespace(case_id="b"),
+        SimpleNamespace(case_id="c"),
+    ]
+
+    assert _splice_donor(parents, 0, 0).case_id == "b"
+    assert _splice_donor(parents, 0, 1).case_id == "c"
+    assert _splice_donor(parents, 1, 0).case_id == "c"
+    assert _splice_donor(parents, 1, 1).case_id == "a"
 
 
 def test_select_parents_prefers_novel_buckets(tmp_path: Path) -> None:

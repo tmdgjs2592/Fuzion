@@ -49,7 +49,7 @@ def test_mutate_html_can_append_domato_bundle(monkeypatch) -> None:
     monkeypatch.setattr(
         mod,
         "_mutation_options",
-        lambda html, rng, domato_dir: [
+        lambda html, rng, domato_dir, donor_html: [
             (
                 "append_domato_bundle",
                 1,
@@ -72,7 +72,7 @@ def test_mutate_html_inserts_before_real_closing_tag(monkeypatch) -> None:
     monkeypatch.setattr(
         mod,
         "_mutation_options",
-        lambda html, rng, domato_dir: [
+        lambda html, rng, domato_dir, donor_html: [
             ("append_domato_js_fragment", 1, lambda: mod._append_script(html, "console.log('domato');"))
         ],
     )
@@ -91,7 +91,7 @@ def test_mutate_html_prefers_balanced_body_fragments(monkeypatch) -> None:
     monkeypatch.setattr(
         mod,
         "_mutation_options",
-        lambda html, rng, domato_dir: [
+        lambda html, rng, domato_dir, donor_html: [
             (
                 "duplicate_body_fragment",
                 1,
@@ -105,3 +105,43 @@ def test_mutate_html_prefers_balanced_body_fragments(monkeypatch) -> None:
 
     assert mutator == "duplicate_body_fragment"
     assert mutated.count("</div>") + mutated.count("</p>") == 3
+
+
+def test_mutate_html_can_splice_donor_script(monkeypatch) -> None:
+    from fuzion import campaign_mutator as mod
+
+    donor = "<html><body><script>map.delete('b');</script></body></html>"
+    monkeypatch.setattr(
+        mod,
+        "_mutation_options",
+        lambda html, rng, domato_dir, donor_html: [
+            ("splice_js_section", 1, lambda: mod._splice_script(html, donor_html, rng))
+        ],
+    )
+
+    html = "<html><body><script>let map = new Map();</script></body></html>"
+    mutated, mutator = mutate_html(html, rng=random.Random(0), donor_html=donor)
+
+    assert mutator == "splice_js_section"
+    assert "let map = new Map();" in mutated
+    assert "map.delete('b');" in mutated
+
+
+def test_mutate_html_can_splice_donor_body_fragment(monkeypatch) -> None:
+    from fuzion import campaign_mutator as mod
+
+    donor = "<html><body><section><p>from donor</p></section></body></html>"
+    monkeypatch.setattr(
+        mod,
+        "_mutation_options",
+        lambda html, rng, domato_dir, donor_html: [
+            ("splice_body_fragment", 1, lambda: mod._splice_body_fragment(html, donor_html, rng))
+        ],
+    )
+
+    html = "<html><body><div>seed</div></body></html>"
+    mutated, mutator = mutate_html(html, rng=random.Random(0), donor_html=donor)
+
+    assert mutator == "splice_body_fragment"
+    assert "<div>seed</div>" in mutated
+    assert "<section><p>from donor</p></section>" in mutated

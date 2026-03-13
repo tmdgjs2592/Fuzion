@@ -48,6 +48,7 @@ class CampaignCase:
     source_path: Path
     stage: str
     parent_id: str = ""
+    splice_parent_id: str = ""
     mutator: str = ""
 
     def to_dict(self) -> dict:
@@ -226,8 +227,16 @@ def _case_from_record(record: dict) -> CampaignCase:
         source_path=Path(record["source_path"]),
         stage=record["stage"],
         parent_id=record.get("parent_id", ""),
+        splice_parent_id=record.get("splice_parent_id", ""),
         mutator=record.get("mutator", ""),
     )
+
+
+def _splice_donor(parents: list[CampaignCase], parent_index: int, child_index: int) -> CampaignCase | None:
+    if len(parents) < 2:
+        return None
+    others = parents[parent_index + 1 :] + parents[:parent_index]
+    return others[child_index % len(others)]
 
 
 def _select_parents(config: CampaignConfig, records: list[dict], seen_buckets: set[str]) -> tuple[list[CampaignCase], str]:
@@ -263,11 +272,18 @@ def _mutate_cases(config: CampaignConfig, generation: int, parents: list[Campaig
 
     children: list[CampaignCase] = []
     index = 1
-    for parent in parents:
-        for _ in range(config.mutations_per_case):
+    for parent_index, parent in enumerate(parents):
+        for child_index in range(config.mutations_per_case):
             case_id = _case_id(generation, index)
             output_path = out_dir / f"{case_id}.html"
-            mutator = mutate_file(parent.source_path, output_path, rng=rng, domato_dir=domato_dir)
+            donor = _splice_donor(parents, parent_index, child_index)
+            mutator = mutate_file(
+                parent.source_path,
+                output_path,
+                rng=rng,
+                domato_dir=domato_dir,
+                donor_path=donor.source_path if donor else None,
+            )
             children.append(
                 CampaignCase(
                     case_id=case_id,
@@ -275,6 +291,7 @@ def _mutate_cases(config: CampaignConfig, generation: int, parents: list[Campaig
                     source_path=output_path,
                     stage="mutated",
                     parent_id=parent.case_id,
+                    splice_parent_id=donor.case_id if donor and mutator.startswith("splice_") else "",
                     mutator=mutator,
                 )
             )

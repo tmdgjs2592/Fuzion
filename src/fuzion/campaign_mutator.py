@@ -221,6 +221,51 @@ def _append_markup(html: str, fragment: str) -> str:
     return _insert_before_close(html, "body", chunk) or _insert_before_close(html, "html", chunk) or (html + "\n" + chunk)
 
 
+def _donor_block(text: str, pattern: str, rng: random.Random) -> str:
+    span = _pick_span(text, pattern, rng)
+    if span is None:
+        return ""
+    return text[span[0] : span[1]].strip()
+
+
+def _splice_script(html: str, donor_html: str, rng: random.Random) -> str | None:
+    donor_block = _donor_block(donor_html, _SCRIPT_RE, rng)
+    if not donor_block:
+        return None
+    return _mutate_span(
+        html,
+        _SCRIPT_RE,
+        rng,
+        lambda block: block + ("" if block.endswith("\n") else "\n") + donor_block + "\n",
+    )
+
+
+def _splice_css(html: str, donor_html: str, rng: random.Random) -> str | None:
+    donor_block = _donor_block(donor_html, _STYLE_RE, rng)
+    if not donor_block:
+        return None
+    span = _pick_span(html, _STYLE_RE, rng)
+    if span is None:
+        return _append_style(html, donor_block)
+    block = html[span[0] : span[1]]
+    suffix = "" if block.endswith("\n") else "\n"
+    return _replace(html, span, block + suffix + donor_block + "\n")
+
+
+def _splice_body_fragment(html: str, donor_html: str, rng: random.Random) -> str | None:
+    donor_body = _donor_block(donor_html, _BODY_RE, rng)
+    if not donor_body:
+        return None
+    fragments = _body_fragments(donor_body)
+    if fragments:
+        start, end = max(fragments, key=lambda span: span[1] - span[0])
+        donor_body = donor_body[start:end]
+    donor_body = donor_body.strip()
+    if not donor_body:
+        return None
+    return _append_markup(html, donor_body)
+
+
 def _append_domato_css(html: str, rng: random.Random, domato_dir: Path) -> str | None:
     css = generate_css_rules(domato_dir, seed=rng.randint(0, 2**31 - 1))
     span = _pick_span(html, _STYLE_RE, rng)
@@ -249,7 +294,12 @@ def _fallback_markup(rng: random.Random) -> str:
     )
 
 
-def _mutation_options(html: str, rng: random.Random, domato_dir: Path | None) -> list[tuple[str, int, callable]]:
+def _mutation_options(
+    html: str,
+    rng: random.Random,
+    domato_dir: Path | None,
+    donor_html: str | None,
+) -> list[tuple[str, int, callable]]:
     features = extract_features_from_text(html)
     options: list[tuple[str, int, callable]] = [
         ("append_html_fragment", 1, lambda: _append_markup(html, _fallback_markup(rng))),
@@ -298,6 +348,18 @@ def _mutation_options(html: str, rng: random.Random, domato_dir: Path | None) ->
                 ),
             ]
         )
+
+    if donor_html:
+        donor_has_script = bool(_spans(donor_html, _SCRIPT_RE))
+        donor_has_style = bool(_spans(donor_html, _STYLE_RE))
+        donor_has_body = bool(_spans(donor_html, _BODY_RE))
+
+        if has_script and donor_has_script:
+            options.append(("splice_js_section", 3, lambda: _splice_script(html, donor_html, rng)))
+        if donor_has_style and (has_style or _append_style(html, "") is not None):
+            options.append(("splice_css_rules", 2, lambda: _splice_css(html, donor_html, rng)))
+        if donor_has_body:
+            options.append(("splice_body_fragment", 2, lambda: _splice_body_fragment(html, donor_html, rng)))
 
     if domato_dir is None or not domato_available(domato_dir):
         return options
@@ -353,9 +415,10 @@ def mutate_html(
     *,
     rng: random.Random | None = None,
     domato_dir: Path | None = None,
+    donor_html: str | None = None,
 ) -> tuple[str, str]:
     rng = rng or random.Random()
-    options = list(_mutation_options(html, rng, domato_dir))
+    options = list(_mutation_options(html, rng, domato_dir, donor_html))
     while options:
         name, _weight, build = _weighted_pick(options, rng)
         mutated = build()
@@ -371,8 +434,12 @@ def mutate_file(
     *,
     rng: random.Random | None = None,
     domato_dir: Path | None = None,
+    donor_path: Path | None = None,
 ) -> str:
     html = source_path.read_text(encoding="utf-8", errors="ignore")
-    mutated, mutator = mutate_html(html, rng=rng, domato_dir=domato_dir)
+    donor_html = None
+    if donor_path is not None and donor_path.is_file():
+        donor_html = donor_path.read_text(encoding="utf-8", errors="ignore")
+    mutated, mutator = mutate_html(html, rng=rng, domato_dir=domato_dir, donor_html=donor_html)
     output_path.write_text(mutated, encoding="utf-8")
     return mutator
