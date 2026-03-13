@@ -69,11 +69,25 @@ class FakeChromium:
         self.last_user_data_dir = None
         self.last_headless = None
         self.last_args = None
+        self.last_channel = None
+        self.last_executable_path = None
+        self.last_ignore_default_args = None
 
-    async def launch_persistent_context(self, user_data_dir, headless, args):
+    async def launch_persistent_context(
+        self,
+        user_data_dir,
+        headless,
+        args,
+        channel=None,
+        executable_path=None,
+        ignore_default_args=None,
+    ):
         self.last_user_data_dir = user_data_dir
         self.last_headless = headless
         self.last_args = list(args)
+        self.last_channel = channel
+        self.last_executable_path = executable_path
+        self.last_ignore_default_args = ignore_default_args
         return self._ctx
 
 
@@ -178,14 +192,73 @@ async def test_ok_returns_run_result(tmp_path, monkeypatch):
 
     assert res.status == "ok"
     assert res.elapsed_ms >= 0
+    assert patched.chromium.last_headless is True
     assert "--enable-logging" in patched.chromium.last_args
     assert "--enable-logging=stderr" not in patched.chromium.last_args
     assert "--v=1" in patched.chromium.last_args
+    assert patched.chromium.last_ignore_default_args == ["--disable-breakpad"]
     log_arg = next(arg for arg in patched.chromium.last_args if arg.startswith("--log-file="))
     assert log_arg.endswith("/case_000001/chrome.log")
     assert "--enable-crash-reporter" in patched.chromium.last_args
     dump_arg = next(arg for arg in patched.chromium.last_args if arg.startswith("--crash-dumps-dir="))
     assert dump_arg.endswith("/case_000001/dumps")
+
+
+@pytest.mark.asyncio
+async def test_headed_mode_disables_headless(tmp_path, monkeypatch):
+    import fuzion.run as runner
+    html = tmp_path / "case_000001.html"
+    _write_html(html)
+    patched = _patch(monkeypatch, runner, FakePage())
+
+    res = await runner.run_one(
+        html_path=html,
+        findings_dir=tmp_path / "findings",
+        nav_timeout_s=1,
+        hard_timeout_s=1,
+        headed=True,
+    )
+
+    assert res.status == "ok"
+    assert patched.chromium.last_headless is False
+
+
+@pytest.mark.asyncio
+async def test_browser_channel_is_forwarded(tmp_path, monkeypatch):
+    import fuzion.run as runner
+    html = tmp_path / "case_000001.html"
+    _write_html(html)
+    patched = _patch(monkeypatch, runner, FakePage())
+
+    await runner.run_one(
+        html_path=html,
+        findings_dir=tmp_path / "findings",
+        nav_timeout_s=1,
+        hard_timeout_s=1,
+        browser_channel="chrome",
+    )
+
+    assert patched.chromium.last_channel == "chrome"
+
+
+@pytest.mark.asyncio
+async def test_browser_executable_is_forwarded(tmp_path, monkeypatch):
+    import fuzion.run as runner
+    html = tmp_path / "case_000001.html"
+    _write_html(html)
+    browser_exe = tmp_path / "chrome"
+    browser_exe.write_text("", encoding="utf-8")
+    patched = _patch(monkeypatch, runner, FakePage())
+
+    await runner.run_one(
+        html_path=html,
+        findings_dir=tmp_path / "findings",
+        nav_timeout_s=1,
+        hard_timeout_s=1,
+        browser_executable_path=browser_exe,
+    )
+
+    assert patched.chromium.last_executable_path == str(browser_exe)
 
 
 @pytest.mark.asyncio

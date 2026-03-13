@@ -142,7 +142,7 @@ async def test_crash_evidence_survives_subsequent_ok_run(tmp_path):
     _write_html(crash_html)
     _write_html(ok_html)
 
-    async def fake_run_one(*, html_path, findings_dir, nav_timeout_s, hard_timeout_s):
+    async def fake_run_one(*, html_path, findings_dir, nav_timeout_s, hard_timeout_s, **_kwargs):
         run_dir = findings_dir / html_path.stem
         if html_path.name == "case_000001.html":
             run_dir.mkdir(parents=True, exist_ok=True)
@@ -161,3 +161,31 @@ async def test_crash_evidence_survives_subsequent_ok_run(tmp_path):
     assert summary.crash == 1
     assert summary.ok == 1
     assert (findings_dir / "case_000001" / "meta.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_run_corpus_forwards_browser_options(tmp_path):
+    from fuzion.orchestrator import run_corpus
+
+    corpus_dir = tmp_path / "corpus"
+    corpus_dir.mkdir()
+    html = corpus_dir / "case_000001.html"
+    _write_html(html)
+    browser_exe = tmp_path / "chrome"
+    browser_exe.write_text("", encoding="utf-8")
+
+    with patch("fuzion.orchestrator.run_one", new_callable=AsyncMock, return_value=_make_result("ok")) as mock_run:
+        await run_corpus(
+            corpus_dir=corpus_dir,
+            findings_dir=tmp_path / "findings",
+            nav_timeout_s=1,
+            hard_timeout_s=1,
+            headed=True,
+            browser_channel="chrome",
+            browser_executable_path=browser_exe,
+        )
+
+    called = mock_run.await_args.kwargs
+    assert called["headed"] is True
+    assert called["browser_channel"] == "chrome"
+    assert called["browser_executable_path"] == browser_exe
