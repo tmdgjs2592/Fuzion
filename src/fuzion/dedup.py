@@ -209,6 +209,55 @@ def _collect_failure_text(result: dict, meta: dict) -> str:
     return "\n".join(parts)
 
 
+def _build_synthetic_fuzzmanager_input(result: dict, meta: dict) -> str | None:
+    """
+    Build a compact assertion-like line from existing failure metadata.
+
+    This lets FuzzManager create stable signatures even when we only have
+    Playwright timeout/crash detail text (no native stacks/sanitizer output).
+    """
+    candidates: list[str] = []
+
+    for key in ("detail",):
+        val = result.get(key)
+        if isinstance(val, str) and val.strip():
+            candidates.append(val.strip())
+
+    for key in ("detail",):
+        val = meta.get(key)
+        if isinstance(val, str) and val.strip():
+            candidates.append(val.strip())
+
+    js_errors = meta.get("js_errors", [])
+    if isinstance(js_errors, list):
+        for entry in js_errors:
+            if isinstance(entry, dict):
+                for key in ("message", "text", "stack"):
+                    val = entry.get(key)
+                    if isinstance(val, str) and val.strip():
+                        candidates.append(val.strip())
+                        break
+            elif isinstance(entry, str) and entry.strip():
+                candidates.append(entry.strip())
+
+    for raw in candidates:
+        # Use the first line only to avoid volatile call-log tails.
+        line = raw.splitlines()[0].strip()
+        if not line:
+            continue
+        # Playwright detail strings often contain escaped newlines/quotes from repr().
+        line = line.replace("\\n", " ").replace('\\"', '"')
+        line = _normalize_detail(line)
+        line = re.sub(r"\s+", " ", line).strip()
+        if not line:
+            continue
+        if len(line) > 200:
+            line = line[:200]
+        return f"Assertion failure: {line}"
+
+    return None
+
+
 def _fuzzmanager_signature_from_text(text: str) -> str | None:
     if not _FUZZMANAGER_AVAILABLE or not text.strip():
         return None
@@ -232,6 +281,13 @@ def _resolve_root_cause(result: dict, results_path: Path) -> tuple[str, str]:
     fm_signature = _fuzzmanager_signature_from_text(fm_text)
     if fm_signature:
         return f"fuzzmanager:{fm_signature}", "fuzzmanager"
+
+    if result.get("status") in {"timeout", "hang", "error"}:
+        synthetic_fm_text = _build_synthetic_fuzzmanager_input(result, meta)
+        if synthetic_fm_text:
+            synthetic_signature = _fuzzmanager_signature_from_text(synthetic_fm_text)
+            if synthetic_signature:
+                return f"fuzzmanager:{synthetic_signature}", "fuzzmanager_synthetic"
 
     html_path = Path(result.get("testcase", ""))
     return classify_html(html_path), "heuristic"

@@ -7,6 +7,7 @@ from fuzion.dedup import (
     _normalize_detail,
     classify_html,
     _collect_failure_text,
+    _build_synthetic_fuzzmanager_input,
 )
 
 
@@ -83,6 +84,53 @@ def test_collect_failure_text_falls_back_to_chrome_debug_log(tmp_path):
     assert "fallback native line" in text
 
 
+def test_build_synthetic_fuzzmanager_input_normalizes_detail():
+    result = {
+        "detail": "TimeoutError('Page.goto: Timeout 10000ms exceeded.\\nCall log:\\n - navigating to http://127.0.0.1:54321/custom_000123.html')"
+    }
+    meta = {}
+    text = _build_synthetic_fuzzmanager_input(result, meta)
+
+    assert text is not None
+    assert text.startswith("Assertion failure: ")
+    assert ":<port>" in text
+    assert "/<file>.html" in text
+
+
+def test_dedup_uses_synthetic_fuzzmanager_when_raw_text_not_parsable(tmp_path, monkeypatch):
+    import fuzion.dedup as dedup_mod
+
+    html = tmp_path / "loop.html"
+    html.write_text("<script>while(true){}</script>", encoding="utf-8")
+    results = {
+        "results": [
+            {
+                "testcase_id": "case_1",
+                "status": "timeout",
+                "testcase": str(html),
+                "detail": "TimeoutError: Timeout 10000ms exceeded",
+                "elapsed_ms": 10000,
+            }
+        ]
+    }
+    results_path = tmp_path / "results.json"
+    results_path.write_text(json.dumps(results), encoding="utf-8")
+
+    seen = []
+
+    def fake_fm(text: str) -> str | None:
+        seen.append(text)
+        if text.startswith("Assertion failure: "):
+            return "timeout_signature"
+        return None
+
+    monkeypatch.setattr(dedup_mod, "_fuzzmanager_signature_from_text", fake_fm)
+    groups = deduplicate(results_path)
+
+    assert any(t.startswith("Assertion failure: ") for t in seen)
+    assert "timeout:fuzzmanager:timeout_signature" in groups
+
+
 # ---------------------------------------------------------------------------
 # dedup grouping tests — now groups by root cause instead of error message
 # ---------------------------------------------------------------------------
@@ -137,4 +185,7 @@ def test_dedup_summary_has_root_cause(fake_results):
     summary = dedup_summary(fake_results)
     for g in summary["groups"]:
         assert "root_cause" in g
-        assert g["root_cause"] in ("memory_exhaustion", "deep_dom_nesting", "infinite_js_loop", "unknown")
+        assert (
+            g["root_cause"] in ("memory_exhaustion", "deep_dom_nesting", "infinite_js_loop", "unknown")
+            or g["root_cause"].startswith("fuzzmanager:")
+        )
