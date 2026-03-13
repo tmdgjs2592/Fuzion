@@ -140,6 +140,26 @@ def test_materialize_native_log_prefers_profile_chrome_debug(tmp_path):
     assert preferred.read_text(encoding="utf-8") == "native stderr line"
 
 
+def test_attach_dump_meta_records_dump_files(tmp_path):
+    import fuzion.run as runner
+
+    dumps_dir = tmp_path / "dumps"
+    dumps_dir.mkdir()
+    first = dumps_dir / "renderer_1.dmp"
+    first.write_bytes(b"dump")
+    nested = dumps_dir / "nested"
+    nested.mkdir()
+    second = nested / "renderer_2.dmp"
+    second.write_bytes(b"dump")
+
+    meta = {}
+    runner._attach_dump_meta(meta, dumps_dir)
+
+    assert meta["dump_dir"] == str(dumps_dir)
+    assert meta["dump_count"] == 2
+    assert meta["dump_files"] == sorted([str(first), str(second)])
+
+
 def _patch(monkeypatch, runner, page):
     p = FakePlaywright(FakeChromium(FakeContext(page)))
     monkeypatch.setattr(runner, "LocalFileServer", FakeLocalFileServer)
@@ -163,6 +183,9 @@ async def test_ok_returns_run_result(tmp_path, monkeypatch):
     assert "--v=1" in patched.chromium.last_args
     log_arg = next(arg for arg in patched.chromium.last_args if arg.startswith("--log-file="))
     assert log_arg.endswith("/case_000001/chrome.log")
+    assert "--enable-crash-reporter" in patched.chromium.last_args
+    dump_arg = next(arg for arg in patched.chromium.last_args if arg.startswith("--crash-dumps-dir="))
+    assert dump_arg.endswith("/case_000001/dumps")
 
 
 @pytest.mark.asyncio
@@ -307,6 +330,9 @@ async def test_timeout_preserves_evidence(tmp_path, monkeypatch):
     assert meta["result"] == "timeout"
     assert meta["native_log_exists"] is False
     assert meta["native_log_path"].endswith("/case_000005/chrome.log")
+    assert meta["dump_dir"].endswith("/case_000005/dumps")
+    assert meta["dump_count"] == 0
+    assert meta["dump_files"] == []
 
 
 @pytest.mark.asyncio
