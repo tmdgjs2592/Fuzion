@@ -67,6 +67,17 @@ Run `fuzion` in the repository.
 For developers only:
 Run `fuzion --debug` to get extremely verbose logging statements for debugging purposes.
 
+Campaign mode uses the same CLI entrypoint and writes isolated artifacts under `out/campaigns/<name>`.
+Example:
+```
+fuzion --campaign-name smoke --seed-source manual --seed-count 4 --generations 2
+```
+Supported campaign seed sources:
+- `manual`
+- `custom`
+- `custom_v2`
+- `domato`
+
 You’ll be prompted for:
 ```
 Format:
