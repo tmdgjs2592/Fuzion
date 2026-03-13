@@ -6,6 +6,7 @@ import yaml
 from rich.console import Console
 from rich.prompt import Confirm
 
+from . import campaign_cli
 from .config import default_config
 from .tui import prompt_user, format_prompt_user, custom_prompt_user, manual_prompt_user
 from .orchestrator import run_corpus, run_custom
@@ -59,6 +60,7 @@ def main():
         default=None,
         help="Path to a browser executable to launch",
     )
+    campaign_cli.add_campaign_args(parser)
     args = parser.parse_args()
 
     if args.browser_channel and args.browser_executable is not None:
@@ -77,13 +79,17 @@ def main():
     logger.debug("Project root resolved to: %s", root)
     cfg = default_config(root)
     logger.debug("Loaded default config: %s", cfg)
-    _maybe_clear_out_dir(out_dir=cfg.out_dir, console=console)
 
     # jobs
     jobs = max(1, args.jobs) if args.jobs is not None else cfg.max_concurrency
     logger.debug("threads set to jobs=%d", jobs)
     if args.headed and jobs > 1:
         console.print("[yellow]Warning:[/yellow] headed mode with multiple jobs opens multiple browser windows.")
+
+    if campaign_cli.maybe_run_campaign(args=args, cfg=cfg, console=console, jobs=jobs):
+        return
+
+    _maybe_clear_out_dir(out_dir=cfg.out_dir, console=console)
 
     run_mode = "headed" if args.headed else "headless"
     browser_target = "Chromium"
