@@ -9,7 +9,7 @@ from rich.prompt import Confirm
 from .config import default_config
 from .tui import prompt_user, format_prompt_user, custom_prompt_user, manual_prompt_user
 from .orchestrator import run_corpus, run_custom
-from .generators import DomatoGenerator, CustomGenerator
+from .generators import DomatoGenerator, CustomGenerator, CustomGeneratorV2
 from .util import write_json, safe_rmtree, ensure_dir
 from .dedup import dedup_summary
 from .report import generate_report
@@ -130,19 +130,22 @@ def main():
         logger.debug("run_corpus complete: summary=%s, result count=%d", summary, len(results))
 
     elif choice == 2:
-        n, seed = custom_prompt_user()
-        logger.debug("Custom prompt returned: n=%d, seed=%s", n, seed)
-
-        rules_path = cfg.project_root / "grammars" / "html_rules.yaml"
-        logger.debug("Resolved rules_path: %s", rules_path)
-        console.print(f"\n[bold]Generating[/bold] {n} custom files from: [cyan]{rules_path}[/cyan]...")
-
+        n, seed, custom_mode = custom_prompt_user()
+        logger.debug("Custom prompt returned: n=%d, seed=%s, mode=%s", n, seed, custom_mode)
         _reset_dir(cfg.corpus_dir)
 
-        gen = CustomGenerator(rules_path=rules_path, seed=seed)
-        logger.debug("CustomGenerator instantiated: %s", gen)
+        if custom_mode == "v2":
+            console.print(f"\n[bold]Generating[/bold] {n} [cyan]custom v2[/cyan] files (native-surface stress)...")
+            gen = CustomGeneratorV2(seed=seed)
+            logger.debug("CustomGeneratorV2 instantiated: %s", gen)
+        else:
+            rules_path = cfg.project_root / "grammars" / "html_rules.yaml"
+            logger.debug("Resolved rules_path: %s", rules_path)
+            console.print(f"\n[bold]Generating[/bold] {n} custom files from: [cyan]{rules_path}[/cyan]...")
+            gen = CustomGenerator(rules_path=rules_path, seed=seed)
+            logger.debug("CustomGenerator instantiated: %s", gen)
         gen.generate(corpus_dir=cfg.corpus_dir, n=n)
-        logger.debug("CustomGenerator.generate complete")
+        logger.debug("Custom generator (%s) complete", custom_mode)
 
         console.print(f"[bold]Running[/bold] {run_mode} {browser_target} over corpus in: {cfg.corpus_dir}")
         logger.debug(

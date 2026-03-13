@@ -42,3 +42,47 @@ def test_manual_prompt_user_raises_when_no_html_files(tmp_path: Path) -> None:
     (tmp_path / "not_html.txt").write_text("x", encoding="utf-8")
     with pytest.raises(FileNotFoundError, match=r"No \.html files found"):
         tui.manual_prompt_user(tmp_path)
+
+
+def test_custom_prompt_user_supports_custom_v2(monkeypatch: pytest.MonkeyPatch) -> None:
+    class StubIntPrompt:
+        answers = iter([2, 25])
+
+        @staticmethod
+        def ask(*args, **kwargs) -> int:
+            return next(StubIntPrompt.answers)
+
+    class StubPrompt:
+        @staticmethod
+        def ask(*args, **kwargs) -> str:
+            return "123"
+
+    monkeypatch.setattr(tui, "IntPrompt", StubIntPrompt)
+    monkeypatch.setattr(tui, "Prompt", StubPrompt)
+
+    n, seed, mode = tui.custom_prompt_user()
+    assert n == 25
+    assert seed == 123
+    assert mode == "v2"
+
+
+def test_custom_prompt_user_reprompts_invalid_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    class StubIntPrompt:
+        answers = iter([9, 1, 10])
+
+        @staticmethod
+        def ask(*args, **kwargs) -> int:
+            return next(StubIntPrompt.answers)
+
+    class StubPrompt:
+        @staticmethod
+        def ask(*args, **kwargs) -> str:
+            return ""
+
+    monkeypatch.setattr(tui, "IntPrompt", StubIntPrompt)
+    monkeypatch.setattr(tui, "Prompt", StubPrompt)
+
+    n, seed, mode = tui.custom_prompt_user()
+    assert n == 10
+    assert seed is None
+    assert mode == "v1"

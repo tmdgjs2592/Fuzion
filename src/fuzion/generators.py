@@ -7,6 +7,7 @@ from typing import Protocol, Optional
 
 from .generate import generate_html_files
 from .custom_generator import generate_custom_files
+from .custom_generator2 import generate_custom_files2
 
 logger = logging.getLogger(__name__)
 
@@ -59,5 +60,25 @@ class CustomGenerator:
         )
         logger.debug(
             "CustomGenerator.generate complete: %d file(s) written to %s",
+            n, corpus_dir,
+        )
+
+
+@dataclass(frozen=True)
+class CustomGeneratorV2:
+    seed: Optional[int] = None
+
+    def generate(self, *, corpus_dir: Path, n: int) -> None:
+        logger.debug(
+            "CustomGeneratorV2.generate called: corpus_dir=%s, n=%d, seed=%s",
+            corpus_dir, n, self.seed,
+        )
+        generate_custom_files2(
+            corpus_dir=corpus_dir,
+            n=n,
+            seed=self.seed,
+        )
+        logger.debug(
+            "CustomGeneratorV2.generate complete: %d file(s) written to %s",
             n, corpus_dir,
         )

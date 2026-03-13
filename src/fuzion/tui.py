@@ -59,9 +59,20 @@ def format_prompt_user(bundles_yaml: Path) -> tuple[int, str, str]:
 
     return n, fmt, domato_arg
 
-def custom_prompt_user() -> tuple[int, int | None]:
+def custom_prompt_user() -> tuple[int, int | None, str]:
     logger.debug("custom_prompt_user called")
     console = Console()
+
+    console.print("Choose custom generator:")
+    console.print("  1. [cyan]Custom[/cyan] (grammar rules)")
+    console.print("  2. [cyan]Custom v2[/cyan] (native-surface stress)")
+    while True:
+        mode_choice = IntPrompt.ask("Custom mode", default=1)
+        if 1 <= mode_choice <= 2:
+            break
+        console.print("[red]Invalid choice[/red] (enter 1-2)")
+    mode = "v2" if mode_choice == 2 else "v1"
+    logger.debug("User selected custom mode: %s", mode)
 
     n = IntPrompt.ask("How many files to generate?", default=100)
     n = max(1, n)
@@ -71,7 +82,7 @@ def custom_prompt_user() -> tuple[int, int | None]:
     seed = int(seed_str) if seed_str.strip() else None
     logger.debug("User provided seed: %s", seed)
 
-    return n, seed
+    return n, seed, mode
 
 def manual_prompt_user(custom_dir: Path):
     console = Console()

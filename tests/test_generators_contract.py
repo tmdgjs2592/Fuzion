@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 
 from fuzion.config import default_config
-from fuzion.generators import DomatoGenerator, CustomGenerator
+from fuzion.generators import DomatoGenerator, CustomGenerator, CustomGeneratorV2
 
 # Testing both generate.py and custom_generator.py- For the next components of fuzion, results need to ensure that from both functions we get:
 # 1. n files generated
@@ -24,6 +24,7 @@ def assert_generator_contract(corpus_dir: Path, n: int) -> None:
 @pytest.fixture(params=[
     pytest.param("domato", id="DomatoGenerator"),
     pytest.param("custom", id="CustomGenerator"),
+    pytest.param("custom_v2", id="CustomGeneratorV2"),
 ])
 def generator(request, tmp_path):
     cfg = default_config(ROOT)
@@ -34,6 +35,8 @@ def generator(request, tmp_path):
             format_key="html",
             domato_format_arg="html_only.html",  # was "--html"
         )
+    if request.param == "custom_v2":
+        return CustomGeneratorV2(seed=42)
     return CustomGenerator(
         rules_path=ROOT / "grammars" / "html_rules.yaml",
         seed=42,
